@@ -1,0 +1,1336 @@
+<html>
+	<head>
+		<title>AtTheFaire Stage Manager</title>
+		<meta name="viewport" content="width:device-width">
+	</head>
+ 
+	<body>
+		<h1>AtThe Faire Stage Manager</h1>
+		<script type="text/javascript">
+//"use strict";
+//-----------------------------------------------------------------------------
+// 2010-09-09 0.00 ach Initial version.
+// 2010-09-14 0.01 ach Adding "is Available" logic to disallow conflicts.
+// 2010-09-14 0.02 ach Colorized list of Acts, when shows still available.
+// 2010-09-15 0.03 ach Sort Acts list alphabetically. Row spanning for acts
+//                     longer than slot time.
+//            0.04 ach Used jslint.com to clean up code, somewhat. Fixed bug
+//                     in how actRows is calculated. Ooopsies.
+// 2010-09-16 0.05 ach Used jsbeautifier.org on code to reformat it. New slot
+//                     available code, which works with setup/teardown time.
+//            0.06 ach Conflict detector is broken. Adding concept of breakTime
+//                     between shows. FIXING table row spanning stuff...!
+// 2010-09-17 0.07 ach Rewrite conflict detection stuff.
+//            0.08 ach Fixed bug that would let Act schedule beyond end of day.
+//                     Adding concept of limiting conflicting shows. am/pm.
+// 2010-09-20 0.09 ach Code cleanup via jslint.com, all warnings removed!
+// 2010-09-21 0.10 ach Adding framework to support load/save of data, HTML5.
+//                     Fixing "for in" warning (hasOwnProperty(i) checks).
+//            0.11 ach Creating ObjEvent and ObjDay objects. Adding linkback
+//                     references between objects.
+//-----------------------------------------------------------------------------
+/*
+TODO: (in no particular order of importance)
+
+1. Change out the generateGrid() and generateAct() code to be dynamically
+		generated HTML (objects). This will eliminate the use of 
+		"document.write" which JSLint.com complains about ;-)
+2. Add HTML database support for loading/saving Stages, Acts, etc.
+3. Add screens for Adding new Stage and Act.
+4. Add Edit screen for Stages and Acts.
+5. Add Delete ability, and remember to clean up any used entries in the grid
+		if deleting something in use.
+6. Add conflict detection (and clean up isSlotAvailable() logic).
+7. Add ability to emit Act schedules, showing specific times and stages for
+		each act (i.e. "Orckes & Trolles: 1pm Minstrel, 2:30pm Tavern, ...").
+8. Add ability to emit stage signs showing the schedule just for that stage
+		(i.e. "Tavern Stage. 1pm Orckes & Trolles, 1:30pm Tavern Wenches,
+		2pm...")
+9. Add ability to generate schedules AUTOMAGICALLY! (The true goal!)
+10. Clean up and skin the HTML using CSS to look spiffy on web/iPad/etc.
+11. Add CSS support for iPhone/iPod touch type devices (different interface,
+		preferably with all the iApp touch effects and such).
+12. Add ObjEvent to describe the event and contain all the stuff.
+13. Add ObjDay to describe a day and the times.
+14. Add ObjTime to describe a block of time, then convert everything to use
+		it. This could allow stages to have blocks of available time
+		(10-12, 1-3) and acts could use it to (can't perform before 11am, etc.).
+		BIG task.
+*/
+//-----------------------------------------------------------------------------
+var programVersion = "0.11";
+var programStatus = "Experimental";
+var programName = "AtTheFaire Stage Manager v" + programVersion;
+
+// Global functions
+var slotAvailable, addToStage, removeFromStage, getInfo, showsAvailable;
+var getShow, addShow, isSlotAvailable, makeSlotID, getColumn, getRow;
+var getActNumber, slotsFromMinutes, refreshActs, selectID, deselectID;
+var colorizeID, messageID, showsPerDay, sortAct, sortStage;
+var dbOpenActs, dbReadActs, dbAddAct, dbDeleteAct, dbUpdateAct;
+var dbOpenStages, dbReadStages, dbAddStage, dbDeleteStage, dbUpdateStage;
+//var dbOpenDays, dbReadDays, dbAddDay, dbDeleteDay. dbUpdateDay;
+var ObjEvent;
+var ObjDay;
+var ObjStage;
+var ObjAct;
+var ObjShow;
+
+// Global variables
+var stages, acts, startTime, endTime, slotDuration, slotsPerDay, actSelected;
+var slotSelected, stageDB, actDB, dayDB, days; //, event;
+ 
+// Set the page title and page header.
+document.title = programName + " by Allen C. Huffman";
+document.getElementsByTagName("h1")[0].innerHTML = programName + " (" + 
+	programStatus + ")";
+ 
+// Notes:
+// Initial version will use preset time slots (15 minutes, 30 minutes), but in
+// the future, it may be updated to allow more free flowing time slots (down to
+// a minute increment), but a whole new objTime system has to be created for
+// that.
+//
+ 
+//-----------------------------------------------------------------------------
+// Generic methods, used by more than one object.
+ 
+function getName() {
+	return this.name;
+}
+function setName(/*string*/name) {
+	this.name = name;
+}
+ 
+function getColor() {
+	return this.color;
+}
+function setColor(/*string*/color) {
+	this.color = color;
+}
+ 
+function getDuration() {
+	return this.duration;
+}
+function setDuration(/*int*/duration) {
+	this.duration = duration;
+}
+ 
+function getSetupTime() {
+	return this.setupTime;
+}
+function setSetupTime(/*int*/setupTime) {
+	this.setupTime = setupTime;
+}
+ 
+function getTeardownTime() {
+	return this.teardownTime;
+}
+function setTeardownTime(/*int*/teardownTime) {
+	this.teardownTime = teardownTime;
+}
+
+function getBreakTime() {
+	return this.breakTime;
+}
+function setBreakTime(/*int*/breakTime) {
+	this.breakTime = breakTime;
+}
+
+function getParentDay() { // 0.11
+	return this.parentDay;
+}
+function setParentDay(/*ObjDay*/parentDay) {
+	this.parentDay = parentDay;
+}
+
+//-----------------------------------------------------------------------------
+// Objects and object-specific methods.
+//
+// And Event contains one or more Days.
+// On each Day, there is one or more Stages.
+// On each Day, there is one or more Acts.
+// Each Act has one or more Shows.
+//
+/*
+    [Event]
+       |
+ [Day]-+-[Day]
+   |
+ [Stage]-[Stage]-[Stage]
+   |
+  [act]-[act]-[act]
+   |
+  [show1]
+   |
+  [show2]
+*/
+// An object that describes the event.
+function ObjEvent(/*string*/name) {
+	this.name = name; // Name of the event ("Iowa Ren Fest")
+	// Children...
+	this.days = []; // Array of ObjDays the event is over.
+}
+
+// An object that describes a day. In cases where an event is multiple
+// days ("Saturday and Sunday") but the shows and stages and schedule
+// will be thes ame both days, the Event can contain only one Day,
+// and the Day will just be called "Weekend" or "Sat & Sun" or
+// whatever. Initiailly, we won't even support advanced multiple day
+// options, but we are building for a better future...
+function ObjDay(/*string*/name, /*Date*/startTime, /*Date*/endTime) {
+	this.name = name; // Name of the day (or, "Saturday & Sunday")
+	this.startTime = startTime;
+	this.endTime = endTime;
+	// Children...
+	this.stages = []; // Array of ObjStage available on this day.
+	this.acts = []; // Array of ObjActs available on this day.
+	// Linkback stuff (like a linked list).
+	// Will be linked to the event it belongs to.
+	this.parentEvent = undefined; // TODO: pass in as a part during creation!
+}
+ 
+function ObjStage(/*string*/name) {
+	this.name = name; // Name of the stage.
+	// Children...
+	this.timeSlots = []; // Array of time slots on the stage.
+	// Linkback stuff
+	// Will be linked back to the day it belongs to.
+	this.parentDay = undefined;
+	// Methods
+	this.getName = getName;
+	this.setName = setName;
+	this.getParentDay = getParentDay; // 0.11
+	this.setParentDay = setParentDay;
+	this.slotAvailable = slotAvailable; // slotAvailable()
+	this.addToStage = addToStage; // schedule()
+	this.removeFromStage = removeFromStage; // unschedule()
+  
+	//msg("Stage '"+name+"' created.");
+}
+
+// Check to see if Time Slot available.
+function slotAvailable(/*int*/ timeSlot) {
+	if (this.timeSlots[timeSlot] !== undefined) {
+		return false;
+	}
+	return true;
+}
+ 
+// Add an Act to a Time Slot
+function addToStage(/*ObjAct*/ act, /*int*/ timeSlot) {
+	// Bail if Act has no Shows left to schedule.
+	//alert("addToStage - Act: "+act.getName() + " timeSlot: "+timeSlot);
+	if (act.showsAvailable() < 1) {
+		messageID("message", "act has no shows left to schedule");
+		return -1; // Error
+	}
+	// If here, there must be shows to allocate.
+	// Bail if Stage Time Slot is already allocated.
+	if (this.slotAvailable(timeSlot) === false) {
+		messageID("message", "slot already has a show there!");
+		return -1;
+	}
+	// If here, we can remove Show from Act and place it on Time Slot.
+	this.timeSlots[timeSlot] = act.getShow();
+	messageID("message", "slots: " + this.timeSlots[timeSlot].name);
+	// TODO: We should really error check this stuff...
+}
+ 
+function removeFromStage(/*int*/ timeSlot) { // Remove Act from Time Slot
+	// Take whatever Show is in the specified Time Slot and return it back to
+	// the Act it belongs to.
+	// Unless, of course, there's nothing in the slot to remove.
+ 
+	// Sanity check.
+	if (this.timeSlots[timeSlot] === undefined) {
+		messageID("message", "nothing to remove from that time slot!");
+		return -1;
+	}
+	// Get the show in the current Slot.
+	var tempShow = this.timeSlots[timeSlot];
+ 
+	if (tempShow.parentAct.addShow(tempShow) < 0) {
+		return -1;
+	}
+	// Clear out Slot in grid.
+	this.timeSlots[timeSlot] = undefined;
+}
+ 
+// FUTURE: objSlot -- time slot in the grid
+/*function objSlot() {
+		var show; // Can contain a Show object.
+		var availability; // Flag showing if slot is available or not.
+}*/
+ 
+function ObjAct(/*string*/ name, /*int*/ showsPerDay, /*string*/ color, 
+	/*int*/ duration, /*int*/ setupTime, /*int*/ teardownTime, 
+	/*int*/ breakTime, /*int*/conflicts) {
+	var i;
+	
+	this.name =  name; // Name of the act.
+	this.showsPerDay = showsPerDay; // Not used yet.
+	this.color = color; // Color.
+	this.duration = duration; // 0.03, will hold longest Show duration
+	this.setupTime = setupTime;
+	this.teardownTime = teardownTime;
+	this.breakTime = breakTime; // Minimum time between shows.
+	this.conflicts = conflicts; // How many conflicting shows? (-1=don't care).
+	// Children...
+	this.shows = []; // Array of individual shows per day.
+	// Linkback stuff
+	this.parentDay = undefined; // Will be linked back to the day it belongs to.
+	// Methods
+	this.getInfo = getInfo; // 0.04
+	this.getName = getName;
+	this.setName = setName;
+	this.getColor = getColor;
+	this.setColor = setColor;
+	this.getDuration = getDuration; // 0.03
+	this.setDuration = setDuration;
+	this.getSetupTime = getSetupTime; // 0.04
+	this.setSetupTime = setSetupTime;
+	this.getTeardownTime = getTeardownTime;
+	this.setTeardownTime = setTeardownTime;
+	this.getBreakTime = getBreakTime; // 0.06
+	this.setBreakTime = setBreakTime;
+	this.getParentDay = getParentDay; // 0.11
+	this.setParentDay = setParentDay;
+ 
+	this.showsAvailable = showsAvailable; // showsAvailable();
+	this.addShow = addShow; // addShow();
+	this.getShow = getShow; // getShow();
+ 
+	// 0.03, if Act duration undefined, set it to grid time slot.
+	if (duration === undefined) {
+		this.duration = 30; //
+	}
+	if (setupTime === undefined) {
+		this.setupTime = 0; // default to five minutes setup time.
+	}
+	if (teardownTime === undefined) {
+		this.teardownTime = 0; // default to five minutes teardown time.
+	}
+	if (breakTime === undefined) {
+		this.breakTime = this.duration; // One time on, one time off. Fair?
+	}
+	if (conflicts === undefined) {
+		this.conflicts = 2; // No more than 2 shows per slot, now. -1;
+	}
+ 
+	// Fill shows array with specified number of show objects.
+	for (i = 0; i < showsPerDay; i = (i + 1)) {
+		// Create a Show object and add it to the Act.
+		this.addShow(new ObjShow(this, name + "'s show", color, this.duration, 
+		this.setupTime, this.teardownTime, this.breakTime));
+	}
+	//msg("Act '"+name+"' created.");
+}
+ 
+// 0.04, return a formatted act string.
+function getInfo() {
+	return this.name + " (" + this.setupTime + "/" + this.duration + "/" + 
+		this.teardownTime + ":" + this.breakTime + "-" + this.conflicts + ")";
+}
+ 
+function showsAvailable() { // Check to see if Shows are available.
+	return this.shows.length;
+}
+ 
+function getShow() {
+	// If no shows available, tell them to go pound sand.
+	if (this.shows.length < 1) {
+		return -1;
+	}
+	// Else, return the next Show available.
+	return this.shows.pop();
+}
+ 
+function addShow(/*ObjShow*/ show) {
+	// If we already have as many shows as we are set to hold...
+	if (this.shows.length >= this.showsPerDay) {
+		messageID("message", "act already has " + showsPerDay + " shows!");
+		return -1;
+	}
+	// Else, we take the show we are being offered and add it.
+	return this.shows.push(show);
+}
+ 
+function ObjShow(/*ObjAct*/ act, /*string*/name, /*string*/color, 
+	/*int*/duration, /*int*/setupTime, /*int*/teardownTime, /*int*/breakTime) {
+	this.name = name; // Title of the show.
+	this.color = color; // Show can have its own color, too.
+	this.duration = duration; // Show duration (length) in minutes.
+	this.setupTime = setupTime; // Show setup time in minutes.
+	this.teardownTime = teardownTime; // Show teardown time in minutes.
+	this.breakTime = breakTime;
+	// Linkback stuff (like a linked list).
+	this.parentAct = act; // Which act this show belongs to.
+ 
+	// Methods
+	this.getName = getName;
+	this.setName = setName;
+	this.getColor = getColor;
+	this.setColor = setColor;
+	this.getDuration = getDuration;
+	this.setDuration = setDuration;
+	this.getSetupTime = getSetupTime;
+	this.setSetupTime = setSetupTime;
+	this.getTeardownTime = getTeardownTime;
+	this.setTeardownTime = setTeardownTime;
+	this.getBreakTime = getBreakTime;
+	this.setBreakTime = setBreakTime;
+
+	//if (name === undefined) return -1;		    // We must have a name!!!
+	//if (act === undefined) return -1;		      // We must have an act!!!
+	//if (color === undefined) this.color='white';
+	if (duration === undefined) {
+		this.duration = 29;
+	}
+	if (setupTime === undefined) {
+		this.setupTime = 5;
+	}
+	if (teardownTime === undefined) {
+		this.teardownTime = 5;
+	}
+	if (breakTime === undefined) {
+		this.breakTime = this.duration;
+	}
+ 
+	//msg("Show '"+name+"' for Act '"+act.name+"' created "+color);	
+}
+ 
+//-----------------------------------------------------------------------------
+// Functions
+ 
+function msg(/*string*/text) {
+	document.write(text + "<br>\n");
+}
+ 
+// Debug functions
+ 
+function showStages(/*array of ObjStage*/stages) {
+	var i;
+	msg("Stages:");
+	document.write("<ol>");
+	for (i in stages) {
+		if (stages.hasOwnProperty(i)) {
+			document.write("<li>" + i + ". " + stages[i].getName());
+		}
+	}
+	document.write("<\/ol>");
+}
+ 
+function showActs(/*array of ObjAct*/acts) {
+	var i, j;
+
+	msg("Acts:");
+	document.write("<ol>");
+	for (i in acts) {
+		if (acts.hasOwnProperty(i)) {
+			document.write("<li>" + i + ". " + acts[i].getInfo() + "(" + 
+				acts[i].showsPerDay + " shows per day)");
+			document.write("<ol>");
+			for (j in acts[i].shows) {
+				if (j.hasOwnProperty()) {
+					document.write("<li>" + acts[i].shows[j].getName());
+				}
+			}
+			document.write("<\/ol>");
+		}
+	}
+	document.write("<\/ol>");
+}
+ 
+function showSlots() {
+	var row, column, slotID;
+	for (row = 0; row < slotsPerDay; row = (row + 1)) {
+		for (column in stages) {
+			if (stages.hasOwnProperty(column)) {
+				slotID = makeSlotID(column, row); // 0.03
+				messageID(slotID, slotID);
+			}
+		}
+	}
+}
+ 
+//-----------------------------------------------------------------------------
+// Utility functions.
+ 
+function padNumber(/*int*/number) {
+	if (number < 10) {
+		return "0" + number;
+	} else {
+		return number;
+	}
+}
+ 
+//-----------------------------------------------------------------------------
+// Grid stuff.
+ 
+// Emit an HTML table schedule grid.
+ 
+function generateGrid() {
+	var column, row, timeSlot, hours, minutes, ampm, time, milliseconds, slotID;
+	// Emit grid table
+	document.write("<table border=\"1\"><tr>");
+       
+	// Emit table header
+	document.write("<th>Time<\/th> ");
+	for (column in stages) {
+		if (stages.hasOwnProperty(column)) {
+			document.write("<th>" + stages[column].getName() + "<\/th>");
+		}
+	}
+	document.write("<th>Time<\/th> ");
+	document.write("<\/tr>");
+ 
+	// Emit grid body
+	timeSlot = new Date(startTime); // Start with the start time for the day.
+	for (row = 0; row < slotsPerDay; row = (row + 1)) {
+		document.write("<tr id=\"row" + row + "\">");
+		hours = timeSlot.getHours();
+		minutes = padNumber(timeSlot.getMinutes());
+		if (hours > 12) {
+			ampm = "pm";
+			hours = padNumber(hours - 12);
+		} else {
+			ampm = "am";
+		}
+		time = hours + ":" + minutes; //+ampm;
+		
+		document.write("<td>" + time + "<\/td>");
+		for (column in stages) {
+			if (stages.hasOwnProperty(column)) {
+				slotID = makeSlotID(column, row); // 0.03
+				document.write("<td class=\"slot\" id=\"" + slotID + 
+					"\" onClick=\"clickGrid('" + slotID + "')\">&nbsp;<\/td>");
+			}
+		}
+		document.write("<td>" + time + "<\/td>");
+		document.write("<\/tr>");
+		milliseconds = timeSlot.getTime() + (slotDuration * 60 * 1000);
+		timeSlot.setTime(milliseconds);
+	}
+	document.write("<\/table>");
+}
+ 
+// Refresh the grid.
+ 
+function refreshGrid() {
+	var row, column, slotID, actName, color, act;
+
+	row = 0;
+	for (row = 0; row < slotsPerDay; row = (row + 1)) {
+		column = 0;
+		for (column in stages) {
+			if (stages.hasOwnProperty(column)) {
+				slotID = makeSlotID(column, row); // 0.03
+				actName = "&nbsp;"; // Default to no act in the slow
+				color = "white";
+				// Being lazy and letting it catch a non existent object...
+				try {
+					act = stages[column].timeSlots[row];
+					actName = act.getName();
+					color = act.getColor();
+				} catch (err) {
+					// Ho hum...
+				}
+				// Display any Show that should be in that slot.
+				messageID(slotID, actName, color);
+			}
+		}
+	}
+	// If we have a selected grid item, show it.
+	if (slotSelected !== undefined) {
+		selectID(slotSelected);
+	}
+}
+ 
+// If Grid box is clicked, what do we go?
+ 
+function clickGrid(/*string*/ slotID) {
+	var i, column, row, act, slot, cell, actRows, rowID;
+	
+	// Convert the slotID to a stage/slot format (parse).
+	// passed in: stageXslotY
+	column = getColumn(slotID);
+	row = getRow(slotID);
+ 
+	// If clicking the Slot that is already selected, toggle it off and return.
+	if (slotID === slotSelected) {
+		messageID("message", slotID + " has been deselected.");
+		slotSelected = undefined;
+		refreshGrid();
+		return;
+	}
+ 
+	// If no act is selected, we may be trying to remove/move an act.
+	if (actSelected === undefined) {
+		// See if grid Slot is empty. If it is, do nothing and return.
+		if (stages[column].slotAvailable(row) === true) {
+			messageID("message", "Nothing in that grid. Move along...");
+			return;
+		} else {
+			// Else we are clicking on something already in the grid.
+ 
+			// If a different Slot was already selected...
+			if (slotSelected !== undefined) {
+				// Turn it off, first.
+				if (slotID === slotSelected) {
+					slotSelected = undefined;
+				}
+			}
+			// TODO: add SWAP later
+ 
+			// Make currently selected Slot be the one they clicked.
+			slotSelected = slotID;
+			messageID("message", slotID + " now selected in Grid...");
+			refreshGrid();
+			return;
+		}
+	}
+	// If here, we have an Act selected, and are now clicking a Slot.
+	// See if this slot is valid for this act to be in.
+	if (isSlotAvailable(acts[getActNumber(actSelected)], slotID) === false) {
+		messageID("message", 
+		"I'm sorry, Dave. I'm afraid that slot is not available to you.");
+		return;
+	}
+ 
+	// Convert the actSelected to an act format (parse).
+	act = getActNumber(actSelected); // 0.03
+ 
+	// If the Slot is empty...
+	if (stages[column].slotAvailable(row) === true) {
+		// Place Act in the Slot...
+		stages[column].addToStage(acts[act], row);
+	       
+		// 0.03, if act takes up more than one slot, expand slot.
+		actRows = slotsFromMinutes(acts[act].getDuration(), slotDuration);
+		//alert("actRows: "+actRows);
+		if (actRows > 1) { // 0.03, if we will expand past one slot...
+			// Delete cell(s) we are covering up.
+			for (i = 1; i < actRows; i = (i + 1)) {
+				slot = makeSlotID(column, (row + i));
+				cell = document.getElementById(makeSlotID(column, 
+					(row + i))).cellIndex;
+				//alert("slot ID: "+slot+" cell: "+cell);
+				rowID = "row" + (row + i);
+				document.getElementById(rowID).deleteCell(cell);
+			}
+			 // NOTE: Add them back with proper ID strings when
+			 // removing or moving Acts!
+ 
+			// Set table rowSpan
+			document.getElementById(slotID).rowSpan = actRows;
+		}
+	       
+		// Deselect act, though in the future we may allow multiple clicks.
+		deselectID(actSelected);
+		actSelected = undefined;
+		// For now, we are done. Refresh and return.
+		refreshGrid();
+		refreshActs();
+		return;
+	} else {
+		messageID("message", "Uh, that grid spot is already taken. Stop that.");
+		return;
+	}
+} // end function clickGrid(slotID)
+ 
+// Highlight all possible grid locations for a specific act.
+// Current Simple Rules: Slot before, containing, and after the act are
+// unavailable.
+ 
+function showAvailable(/*ObjAct*/ act) {
+	var actRows, row, column;
+	
+	messageID("message", "Looking for available slots for " + act.name + 
+		". You may place act in any highlited slot.");
+	// Calculate how many rows (time slots) the act takes up.
+	actRows = slotsFromMinutes((act.getDuration() + act.getTeardownTime()), 
+		slotDuration);
+
+	for (row = 0; row < slotsPerDay; row = (row + 1)) {
+		for (column in stages) {
+			if (stages.hasOwnProperty(column)) {
+				if (isSlotAvailable(act, makeSlotID(column, row))) {
+					selectID(makeSlotID(column, row));
+				}
+			}
+		}
+	}
+} // end function showAvailable(/*ObjAct*/ act)
+ 
+// Scan to see if a specified Act is scheduled in a specific row.
+// Returns TRUE or FALSE
+ 
+function isInRow(/*ObjAct*/ act, /*int*/ row) {
+	var column;
+	
+	//alert("inInRow " + row + " looking for act "+act.name);
+	if ((act === undefined) || (row === undefined)) {
+		return false;
+	}
+	if (row >= slotsPerDay) {
+		return false;
+	}
+	// TODO: check lower boundries, too?
+ 
+	// Scan specified row across all stages, looking for match.
+	column = 0;
+	// Scan grid row and see if act is already on that row.
+	for (column in stages) {
+		if (stages.hasOwnProperty(column)) {
+			// Skip empty slots.
+			if (stages[column].slotAvailable(row) === true) {
+				continue;
+			}
+			// If grid slot contains the target act...
+			if (stages[column].timeSlots[row].parentAct === act) {
+				// Found the act on this row. Report back.
+				return true;
+			}
+		}
+	}
+	return false;
+} // end function isInRow()
+ 
+// Nasty brute-force method, for now.
+// When a timeslot in the grid is chosen, we need to make sure that placing the
+// act there would not conflict with itself if already placed somewhere else in
+// the grid at the same time. We will take in to consideration the setupTime
+// and the teardownTime, making sure that a previous instance is clear (act
+// start time + duration + teardown time) from the time slot chosen, and also
+// that no other instance of the act starts before the Act in this slot would
+// be done (act start time + duration + teardown time). Or something like that.
+// We can combine tear down and setup time, now that I think about it. If a
+// slot is 15 minutes, and an act has a 7 minute setup, and 7 minute tear down,
+// they would only need one slot between acts since the 15 minute slot would
+// have room for 7 minutes teardown of previous show, then 7 minutes setup
+// time for the next... with a minute to spare ;-) Sweetness.
+ 
+function isRowAvailable(/*ObjAct*/ act, /*int*/ row) {
+	var i, actRows, actTeardownRows, actBetweenRows, startRow, rowAvailable;
+	
+	//alert("act was not found in row: " + row + " checking next "+actRows+
+	// " rows...");
+       
+	// Math is hard. Let's figure some stuff out first.
+	actRows = slotsFromMinutes(act.getDuration(), slotDuration);
+	actTeardownRows = slotsFromMinutes(act.getTeardownTime(), slotDuration);
+	actBetweenRows = slotsFromMinutes(act.getSetupTime() + 
+		act.getTeardownTime() + act.getBreakTime(), slotDuration);
+	//alert("actBetweenRows: "+actBetweenRows+" actRows: "+actRows);
+ 
+	// Now we try to rewind back from starting row. Take start row, then back up
+	// setup time, and show duration time, then scan forward.
+	startRow = (row - actBetweenRows - actRows + 1);
+	//alert("startRow: "+startRow);
+	// If we walked off the grid, we can just start at the top. I hope these
+	// vars are signed integers...
+	if (startRow < 0) {
+		startRow = 0;
+	}
+ 
+	// Assume row is available unless we find otherwise.
+	rowAvailable = true;
+	//alert("checking row: " + row + " by scanning "+startRow + " to " + 
+	//(row + actRows));
+	for (i = startRow; i < (row + actRows + actBetweenRows); i = (i + 1)) {
+		//alert("looking for act in row: " + (row + i));
+		if (isInRow(act, i) === true) {
+			//alert("found act in row: " + i);
+			rowAvailable = false;
+			break;
+		}
+		// TODO: Count number of conflicting shows in this slot and error if
+		// there are more than act.conflicts count!
+		
+	}
+	// Hmmm. Can it really be that easy? Brute force is cool.
+	return rowAvailable;
+}
+ 
+// Is this slot available? First we check the stage (column) before and after
+// the slot for ANY conflict, then we proceed to check for same-Act conflicts
+// in slots (rows) before and after.
+function isSlotAvailable(/*ObjAct*/ act, /*string*/ slotID) {
+	var i, column, row, slotsUsed, show, tempMinutes;
+	
+	if (act === undefined) {
+		return false;
+	}
+	if (slotID === undefined) {
+		return false;
+	}
+	//alert("isSlotAvailable()");
+       
+	// Can this Act go in this Slot?
+	column = getColumn(slotID);
+	row = getRow(slotID);
+	
+	// Scan back to see if there is something before us.
+	for (i = row; i >= 0; i = (i - 1)) {
+		// If the timeslot contains something...
+		show = stages[column].timeSlots[i];
+		// If we found a show...
+		if (show !== undefined) {
+			//alert("found a show before us: "+show.getName());
+			// See if show time plus it's teardown time (plus breaktime if
+			// it's us) would be past the clicked on slot...
+			tempMinutes = (show.getDuration() + show.getTeardownTime());
+			//alert("this show is "+tempMinutes+" long");
+			// If the found Act is ourself, also consider break time.
+			if (show.parentAct === act) {
+				tempMinutes = (tempMinutes + show.getBreakTime());
+				//alert("and it's us, so we add the breaktime: "+tempMinutes);
+			}
+			slotsUsed = slotsFromMinutes(tempMinutes, slotDuration);
+			if ((i + slotsUsed) > row) {
+				messageID("message", 
+					"An act earlier in the day would conflict.");
+				return false;
+			}
+		}
+	}
+	// If here, nothing conflicting was before us. Check after us. Scan
+	// from this row forward, the length of the act plus teardown time.
+	slotsUsed = slotsFromMinutes(act.getDuration() + act.getTeardownTime(), 
+		slotDuration);
+	
+	// 0.08, Quick check to eliminate slots too close to the bottom.
+	if (row + slotsUsed > slotsPerDay) {
+		return false;
+	}
+	
+	//messageID("message", "scanning ahead slots used by act:"+act.getInfo()
+	// + " slots:"+slotsUsed);
+	for (i = row; i < (row + slotsUsed); i = (i + 1)) {
+		show = stages[column].timeSlots[i];
+		// If we found a show...
+		if (show !== undefined) {
+			//alert("found a show after us: "+show.getName());
+			// If the show found was us, we need to consider breaktime, too
+			if (show.parentAct === act) {
+				//alert("and it's us, so we need to add breaktime!");
+			}
+			// Bumpola!
+			//messageID("message",
+			//	"This would conflict with an act later in the day.");
+			return false;
+		}
+	}
+	// Now we check across the grid for any conficts of the same act elsewhere.
+	// This is also going to check for conflict count (see that function).
+	if (isRowAvailable(act, row) === false) {
+		//messageID("message", 
+		//	"Act is somewhere else in grid and would conflict.");
+		return false;
+	}
+
+	// If here, I guess we found nothin'...
+	return true;
+} // end isSlotAvailable()
+ 
+// 0.03, Utility functions for slotID
+// Create a slotID string from a column and row.
+function makeSlotID(/*int*/ column, /*int*/ row) {
+	return "stage" + column + "slot" + row;
+}
+ 
+// Parse and return column number from a slotID string.
+function getColumn(/*string*/ slotID) {
+	var pos;
+	
+	// Get number between "stage" and "slot".
+	pos = parseInt(slotID.indexOf("slot", 0), 10);
+	return parseInt(slotID.substring(5, pos), 10); // Get number after "slot".
+}
+// Parse and return row number from a slotID string.
+ 
+function getRow(/*string*/ slotID) {
+	var pos;
+	
+	// Get number between "stage" and "slot".
+	pos = parseInt(slotID.indexOf("slot", 0), 10);
+	return parseInt(slotID.substring(pos + 4), 10); // This trims to the end.
+}
+// Parse and return act number from actID string.
+ 
+function getActNumber(/*string*/ actID) {
+	return parseInt(actID.substring(3), 10);
+}
+ 
+function makeActID(/*int*/ actNumber) {
+	return "act" + actNumber;
+}
+ 
+// Return number of slots that a number of minutes will take.
+function slotsFromMinutes(/*int*/ minutes, /*int*/slotDuration)
+{
+	return parseInt(((minutes - 1) / slotDuration) + 1, 10);
+}
+ 
+//-----------------------------------------------------------------------------
+// Acts stuff.
+ 
+// Emit list of acts.
+ 
+function generateActs() {
+	var i, actID;
+	
+	document.write("<table border=\"1\">");
+	document.write("<tr><th>Act<\/th><\/tr>");
+
+	for (i in acts) {
+		if (acts.hasOwnProperty(i)) {
+			actID = makeActID(i);
+			document.write("<tr><td id=\"" + actID + "\" onClick=\"clickAct('" +
+				actID + "')\">" + acts[i].getInfo() + " (" +
+				acts[i].showsAvailable() + " of " + acts[i].showsPerDay +
+				")<\/td><\/tr>");
+		}
+	}
+	document.write("<\/table>");
+	refreshActs(); // Colorize them, this initial time.
+}
+ 
+// Refresh Act listing...
+ 
+function refreshActs() {
+	var i, actID;
+	
+	i = 0;
+	for (i in acts) {
+		if (acts.hasOwnProperty(i)) {
+			actID = makeActID(i);
+			messageID(actID, acts[i].getInfo() + " (" + 
+				acts[i].showsAvailable() + " of " + acts[i].showsPerDay + ")");
+			// If shows available, colorize, else leave off.
+			if (acts[i].showsAvailable() > 0) {
+				colorizeID(actID, acts[i].getColor());
+			}
+		}
+	}
+}
+ 
+// Click on an Act.
+ 
+function clickAct(/*string*/actID) {
+	// Convert the actSelected to a numeric act number in the array.
+	var act, row, column, actRows, rowID, lastCell, i, j, cell, tempID;
+	
+	act = getActNumber(actID); // 0.03
+ 
+	// TODO: clean this up -- it can be merged.
+	// If there is an act selected...
+	if (actSelected !== undefined) {
+		// And it's not the one we just clicked on...
+		if (actSelected !== actID) {
+			// Then reset the Act that was already selected (reset).
+			deselectID(actSelected);
+			actSelected = undefined;
+			refreshGrid();
+			refreshActs();
+		}
+	}
+ 
+	// First, we see if we have a grid item selected. If so, we may be
+	// trying to remove a Show and put it back in the Act list.
+ 
+	// If we have a slot item selected..
+	if (slotSelected !== undefined) {
+		// Since we won't allow putting one Act's Show on another Act's list,
+		// we'll assume that any click to the Act list means to put the
+		// currently selected Show back to the Act it belongs to.
+ 
+		// Figure out which entry in the Stage array we have selected.
+		column = getColumn(slotSelected);
+		row = getRow(slotSelected);
+ 
+		// Try to put selected Show back on selected Act.
+		// TODO: I think I need to clarify the logic here.
+		if (stages[column].removeFromStage(row)) {
+			messageID("message", "Error putting act back!");
+			return;
+		} else {
+			messageID("message", actID + " has been put back.");
+			// 0.03, un-rowspan, if needed.									
+			document.getElementById(slotSelected).rowSpan = 1;
+			// And add back previously deleted cells.
+			// 0.03, if act takes up more than one slot, expand slot.
+			actRows = slotsFromMinutes(acts[act].getDuration(), slotDuration);
+ 
+			if (actRows > 1) { // 0.03, if we had expanded past one slot...
+				// Insert cell(s) we had deleted and covered up.
+				for (i = 1; i < actRows; i = (i + 1)) {
+					rowID = "row" + (row + i);
+					// Insert a cell and give in back it's ID...
+					// Start at the front looking for a match...
+					lastCell = -1; // Not found.
+					for (j = 0; j < column; j = (j + 1)) {
+						tempID = makeSlotID(j, (row + i));
+						// If we find it,
+						if (document.getElementById(tempID)) {
+							// Make a note of the cell position. We may need it
+							// later.
+							lastCell = (lastCell + 1);
+						}
+					}
+					// If here, tempID is last found match.
+					// before...
+					cell = document.getElementById(rowID).insertCell(lastCell +
+						2);
+					cell.id = makeSlotID(column, (row + i)); // 0.03
+					cell.innerHTML = "restored";
+				}
+			}
+			// Deselect Slot.
+			deselectID(slotSelected);
+			slotSelected = undefined;
+			refreshGrid();
+			refreshActs();
+			return;
+		}
+	}
+ 
+	// If here, we are clicking on an Act with no grid item already
+	// selected. Let's see if the Act has Shows available to
+	// be allocated on the grid. If it doesn't, we can't select that act.
+	if (acts[act].showsAvailable() < 1) { // 0 shows left unallocated?
+		messageID("message", acts[act].getName() + 
+			" is already fully scheduled. Stop that.");
+		return;
+	}
+ 
+	// Now we do a toggle check. If we click on an act that is already
+	// selected, we will just toggle it back off.
+	if (actID === actSelected) {
+		messageID("message", actID + " has been deselected.");
+		// Toggle off act.
+		actSelected = undefined;
+		// refreshActs();
+		deselectID(actID);
+		refreshGrid();
+		refreshActs();
+		return;
+	}
+ 
+	// If we click on an act that isn't already the selected act...
+	if (actID !== actSelected) {
+		// If there was a different Act already selected, deselect it first.
+		if (actSelected !== undefined) {
+			deselectID(actSelected);
+			actSelected = undefined;
+		}
+		selectID(actID);
+		actSelected = actID;
+		messageID("message", actID + 
+			" currently selected. Click location in grid to place there.");
+		// Show which grid slots will be available to place the act.
+		showAvailable(acts[act]);
+	}
+	//refreshActs();
+}
+ 
+//-----------------------------------------------------------------------------
+// HTML stuff.
+ 
+// Select/deselect HTML elements
+ 
+function selectID(/*string*/id) {
+	// 0.03, adding checking to make sure id exists.
+	var element = document.getElementById(id);
+	if (element) {
+		element.style.backgroundColor = 'yellow';
+	}
+}
+ 
+function deselectID(/*id*/id) {
+	var element = document.getElementById(id);
+	if (element) {
+		element.style.backgroundColor = 'white';
+	}
+}
+ 
+function colorizeID(/*string*/id, /*strnig*/color) {
+	if (color === undefined) {
+		return;
+	}
+	var element = document.getElementById(id);
+	if (element) {
+		element.style.backgroundColor = color;
+	}
+}
+// Update text in HTML element
+ 
+function messageID(/*string*/id, /*string*/message, /*string*/color) {
+	colorizeID(id, color);
+	var element = document.getElementById(id);
+	if (element) {
+		element.innerHTML = message;
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Storage stuff.
+
+var dbOpenActs, dbReadActs, dbAddAct, dbDeleteAct;
+var dbOpenStages, dbReadStages, dbAddStage, dbDeleteStage;
+
+// Acts database
+//
+// Open the Acts database.
+/*db*/
+function dbOpenActs(/*string*/dbname)
+{
+	return true;
+}
+
+// Read all Acts from the act database in to Act array.
+function dbReadActs(/*db*/db, /*array*/acts)
+{
+	// Create some acts and add them to the acts array.
+	acts.push(
+		new ObjAct("Joust Evolution", 3, "green"),
+		new ObjAct("Guardians of the Black Forest", 4, "green"),
+		new ObjAct("Friendly Fire", 3, "purple"),
+		new ObjAct("Orckes & Trolles", 5, "orange"),
+		new ObjAct("Shattock Schoole of Defense", 3, "red"),
+		new ObjAct("Dragon Stories", 4, "blue"),
+		new ObjAct("CRVA Glass-blowing", 6, "grey"),
+		new ObjAct("Sons of the Mist", 3, "green"),
+		new ObjAct("Lord Drake's Mystic Magic Show", 3, "purple"),
+		new ObjAct("SHARDS: The Talent of Love", 4, "red"),
+		new ObjAct("Clan MacSwade: highland", 3, "grey"),
+		new ObjAct("Kids With Fire", 4, "purple" ),
+		new ObjAct("Crazy Celts in Kilts", 4, "red"),
+		new ObjAct("G.P. Weapon Demo", 4, "green"),
+		new ObjAct("Rakset al-Nehri", 2, "orange"),
+		new ObjAct("Enchanted Garden", 3, "blue"),
+		new ObjAct("Traveling Knights of Evengard", 4, "red"),
+		new ObjAct("SUN: Habeas Corpus", 3, "orange")
+	);
+	acts.sort(sortAct);
+}
+// SORT: Compare names of two acts and return 1 or -1 based on alphabetical.
+function sortAct(/*ObjAct*/act1, /*ObjAct*/act2) {
+	return ((act1.name > act2.name) ? 1 : -1);
+}
+
+// Add a new Act to the act database.
+function dbAddAct(/*db*/db, /*ObjAct*/act)
+{
+	// If we are passed a valid act object,
+	if (act) {
+		// We will blindly add it to the database and return status.
+		acts.push(act);
+		return true;
+	}
+	return false;
+}
+
+// Delete an Act from the act database.
+function dbDeleteAct(/*db*/db, /*ObjAct*/act)
+{
+	var i;
+	// Walk through list of stages and remove the match.
+	for (i in acts) {
+		if (acts.hasOwnProperty(i)) {
+			// If we find a matching stage object, by name?
+			if (acts[i].name === act.name) {
+				// Remove element at this position.
+				acts.splice(i, 1);
+				return true;
+			}
+		}
+	}
+	// Else, we did not find a match in the database. Odd, that.
+	return false;
+}
+
+function dbUpdateAct(/*db*/db, /*ObjAct*/act)
+{
+	// TODO: this.
+}
+
+
+// Stages database.
+//
+// Open or create the Stages database.
+/*db*/
+function dbOpenStages(/*strnig*/dbname)
+{
+	return true;
+}
+
+// Read all Stages from the stage database in to the Stages array.
+function dbReadStages(/*db*/db, /*array*/stages)
+{
+	// For testing, we are manually loading the array.
+
+	// Create some stages and add them to the stages array.
+	stages.push(new ObjStage("Coliseum Arena"),
+		new ObjStage("Gatehouse Stage"),
+		new ObjStage("Minstrel Stage"),
+		new ObjStage("Royal Pavilion"),
+		new ObjStage("South Meadow"),
+		new ObjStage("Theater on the Green"),
+		new ObjStage("Tournament Field")
+		);
+	// SORT: Compare names of two stages and return 1 or -1 based on 
+	//alphabetical.
+	stages.sort(sortStage);
+}
+function sortStage(/*ObjStage*/stage1, /*ObjStage*/stage2) {
+	return ((stage1.name > stage2.name) ? 1 : -1);
+}
+
+// Add a new Stage to the stage database.
+function dbAddStage(/*db*/db, /*ObjStage*/stage)
+{
+	// If we are passed a valid stage object,
+	if (stage) {
+		// We will blindly add it to the database and return status.
+		stages.push(stage);
+		return true;
+	}
+	return false;
+}
+
+// Delete a Stage from the stage database.
+function dbDeleteStage(/*db*/db, /*ObjStage*/stage)
+{
+	var i;
+	// Walk through list of stages and remove the match.
+	for (i in stages) {
+		if (stages.hasOwnProperty(i)) {
+			// If we find a matching stage object, by name?
+			if (stages[i].name === stage.name) {
+				// Remove element at this position.
+				stages.splice(i, 1);
+				return true;
+			}
+		}
+	}
+	// Else, we did not find a match in the database. Odd, that.
+	return false;
+}
+function dbUpdateStage(/*db*/db, /*ObjStage*/stage)
+{
+	// TODO: this.
+}
+
+// Event Day database.
+//
+// Open or create the Days database.
+/*db*/
+function dbOpenDays(/*string*/name)
+{
+	return undefined; // not supported yet.
+}
+
+// Read all the Days from the days database in to the Days array.
+function dbReadDays(/*db*/db,/*array*/days)
+{
+	return false; // not supported yet.
+}
+
+// Add a new Day to the days database.
+function dbAddDay(/*db*/db, /*ObjDay*/day)
+{
+	return false; // not supported yet.
+}
+
+// Delete a Day from the days database.
+function dbDeleteDay(/*db*/db, /*ObjDay*/day)
+{
+	return false; // not supported yet.
+}
+
+function dbUpdateDay(/*db*/db, /*ObjDay*/day)
+{
+	// TODO: this.
+}
+ 
+//-----------------------------------------------------------------------------
+// Global/configuration varaibles.
+
+// Begin object tree (this would be built via GUI or loaded from database).
+//event = new Event();
+//day = new Day();
+
+stages = [];	// Array of stages.
+acts = [];		// Array of acts.
+
+// Some variables, hard-coded for now.
+startTime = new Date(2000, 1, 1, 11, 0, 0); // Earliest time slot
+endTime = new Date(2000, 1, 1, 18, 0, 0); // Latest time slot
+slotDuration = 30; // Granularity (time of each slot);
+ 
+// Globals
+slotsPerDay = (endTime.getTime() - startTime.getTime()) / 1000 / 60 / 
+	slotDuration;
+ 
+//-----------------------------------------------------------------------------
+// Initialize some stuff.
+
+// Load the Stages
+stageDB = dbOpenStages("stagedb");
+// If stage database could be opened/created,
+if (stageDB) {
+	// Read all entries in to the stages array.	
+	dbReadStages(stageDB, stages);
+}
+// For testing, we will also manually add one.
+//dbAddStage(stageDB, new ObjStage("Wassail Stage"));
+
+// Load the Acts
+actDB = dbOpenActs("actdb");
+// If the act database could be opened/created,
+if (actDB) {
+	// Read all entries in to the acts array
+	dbReadActs(actDB, acts);
+}
+// For testing, we will also manually add one.
+dbAddAct(actDB, new ObjAct("Extra Act", 3, "gray"));
+ 
+ 
+//-----------------------------------------------------------------------------
+// Begin processing...
+ 
+//-----------------------------------------------------------------------------
+		</script>
+		<p>This version should be basically functional.</p>
+		<table style="border:1px solid black;">
+			<tr style="vertical-align:top;">
+				<td><span>
+					<script type="text/javascript">generateGrid(); </script>
+					</span></td>
+				<td><span>
+					<script type="text/javascript">generateActs(); </script>
+					</span></td>
+			</tr><tr>
+				<td colspan="2" id="message" 
+					style="border:1px solid red; background:lightyellow;">
+					Status messages will go here.</td>
+			</tr><tr>
+				<td colspan="2">Instructions: Click on an <strong>Act</strong>
+in the list on the right to select it, then click a spot in
+the <strong>Grid</strong> to place it there. Only highlighted
+spots are available (others have conflicts, such as the act is
+back to back or would be against itself). To remove an
+<strong>Act</strong> from the grid, click on the act in the
+grid, then click back on any <strong>Act</strong> in the list.
+To deselect an <strong>Act</strong> or a <strong>Grid</strong>
+item (if you change your mind), click it again.</td>
+			</tr>
+		</table>
+		<form><input type="button" value="DEBUG INFO" onClick="showSlots();" 
+			/></form>
+	</body>
+</html>
+ 
+ 
