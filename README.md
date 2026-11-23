@@ -143,6 +143,12 @@ dbOpenStages, dbReadStages, dbAddStage, dbDeleteStage, dbUpdateStage
 - JSLint compliance and code cleanup (0.04-0.09)
 - HTML5 database framework preparation (0.10)
 
+## The 2026 rebuild
+
+`stagemanager2026.html` is a single-file rebuild of the scheduler, written in November 2026. Open it in a browser (or serve it from any static host) — data lives in the browser's localStorage, seeded with the v0.11 lineup of 7 stages and 19 acts.
+
+It keeps the v0.11 conflict rules (setup/teardown buffers, break time, no act against itself) and adds config screens for days, stages and categories, JSON export/import, batch editing, and three more conflict rules: a per-category cap on how many acts of a type run at once (the 2010 conflicts number, moved to the category), performer groups (acts sharing a group never overlap), and per-act exclusivity with an excepted category (an exclusive joust that still allows childrens acts). The version number shows in the header and footer; see `CHANGELOG.md` for the version history.
+
 ## Technical Notes
 
 ### Code Quality
@@ -167,8 +173,10 @@ dbOpenStages, dbReadStages, dbAddStage, dbDeleteStage, dbUpdateStage
 
 ## Files
 
-- `stagemanager011.html` - Complete application (HTML + JavaScript)
-- Additional versions: `stagemanager006.html`, `stagemanager007.html`, `stagemanager008.html`
+- `stagemanager.html` — the 2010 program, consolidated: v0.11 code with the full routine-only version history (0.00–0.11) in its header.
+- `stagemanager2026.html` — the 2026 rebuild (single-file web app; see above).
+- `archived/` — the recovered numbered versions of the 2010 program (002, 004–012). Versions 001 and 003 were never found.
+- `CHANGELOG.md` — version history of the 2026 app.
 
 ## License
 

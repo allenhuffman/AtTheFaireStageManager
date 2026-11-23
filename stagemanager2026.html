@@ -26,11 +26,14 @@
             border:1px solid #c8dcf5; min-height:38px; }
   .status.error { background:var(--bad); border-color:#f5c6cb; }
   .status.ok { background:var(--ok); border-color:#b6dfc0; }
-  /* act list */
+  /* act list: sticks to the top while the page scrolls, and the list
+   * itself scrolls, so the grid never slides away while you look for
+   * an act further down the list. */
   .acts { width:280px; flex:none; border:1px solid var(--line); border-radius:8px;
-          overflow:hidden; }
+          overflow:hidden; position:sticky; top:12px; }
   .acts h2, .panel h2 { margin:0; padding:10px 12px; background:#f0f0f0; font-size:14px; }
-  .acts ul { list-style:none; margin:0; padding:6px; }
+  .acts ul { list-style:none; margin:0; padding:6px; max-height:calc(100vh - 280px);
+             overflow-y:auto; }
   .acts li { display:flex; gap:8px; align-items:center; padding:7px 8px; border-radius:6px;
              cursor:pointer; }
   .acts li:hover { background:#f2f2f2; }
@@ -49,6 +52,8 @@
   .grid td.slot { height:30px; min-width:130px; cursor:pointer; }
   .grid td.slot:hover { background:#f0f6ff; }
   .grid td.slot.available { background:#e3f0ff; box-shadow:inset 0 0 0 2px #9cc3f5; }
+  .grid td.slot.blocked { background:#ececec; cursor:not-allowed; }
+  .grid td.slot.blocked:hover { background:#e2e2e2; }
   .grid td.show { color:#fff; font-weight:600; font-size:13px; text-align:center;
                   vertical-align:middle; cursor:pointer; padding:4px; }
   .grid td.show:hover { filter:brightness(1.15); }
@@ -80,13 +85,14 @@
 <body>
 <header>
   <h1>AtTheFaire Stage Manager 2026 <span id="appVersion" style="font-weight:400;font-size:14px;margin-left:8px;"></span></h1>
-  <p>Modern take on the 2010 scheduling grid. Same conflict rules as v0.11; days, stages and acts are now configurable, and everything saves in this browser. Nothing here is pushed anywhere.</p>
+  <p>Modern take on the 2010 scheduling grid. The v0.11 conflict rules, plus a cap on how many acts of a type run at once, performer groups, and per-act exclusivity. Days, stages, categories, groups and acts are configurable, and everything saves in this browser. Nothing here is pushed anywhere.</p>
 </header>
 <nav id="tabs">
   <button data-view="schedule" class="active">Schedule</button>
   <button data-view="days">Days</button>
   <button data-view="stages">Stages</button>
   <button data-view="categories">Categories</button>
+  <button data-view="groups">Groups</button>
   <button data-view="acts">Acts</button>
 </nav>
 <main>
@@ -143,7 +149,7 @@
 
   <section id="view-categories" class="view">
     <div class="panel"><h2>Categories</h2><div class="body">
-      <table class="data"><thead><tr><th>Category</th><th>Colour</th><th>Acts</th><th></th></tr></thead>
+      <table class="data"><thead><tr><th>Category</th><th>Colour</th><th>Max at once</th><th>Acts</th><th></th></tr></thead>
       <tbody id="categoryRows"></tbody></table>
     </div></div>
     <div class="panel"><h2 id="categoryFormTitle">Add a category</h2><div class="body">
@@ -151,17 +157,41 @@
         <input type="hidden" id="categoryId">
         <label><span>Name</span><input id="categoryName" required maxlength="60" placeholder="combat"></label>
         <label><span>Colour</span><input id="categoryColor" type="color" value="#7f8c8d"></label>
+        <label><span>Max at once</span><select id="categoryCap">
+          <option value="1">1</option><option value="2" selected>2</option>
+          <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+          <option value="">No limit</option>
+        </select></label>
         <button class="primary" type="submit">Save category</button>
         <button type="button" id="categoryCancel">Cancel</button>
       </form>
       <p class="hint">A category's colour is the colour its acts show as on the grid — change it here and every act in the category changes. A category with acts in it can't be deleted; move its acts to another category first.</p>
+      <p class="hint">Max at once is the 2010 conflicts number: at most that many acts of this category at the same time (1 means no two ever overlap).</p>
       <p class="hint" id="categoryMsg"></p>
+    </div></div>
+  </section>
+
+  <section id="view-groups" class="view">
+    <div class="panel"><h2>Groups</h2><div class="body">
+      <table class="data"><thead><tr><th>Group</th><th>Acts</th><th></th></tr></thead>
+      <tbody id="groupRows"></tbody></table>
+    </div></div>
+    <div class="panel"><h2 id="groupFormTitle">Add a group</h2><div class="body">
+      <form id="groupForm" class="inline">
+        <input type="hidden" id="groupId">
+        <label><span>Name</span><input id="groupName" required maxlength="60" placeholder="Shattock performers"></label>
+        <fieldset id="groupMembers" style="border:1px solid var(--line);border-radius:6px;padding:8px 12px;"><legend>Acts in this group</legend></fieldset>
+        <button class="primary" type="submit">Save group</button>
+        <button type="button" id="groupCancel">Cancel</button>
+      </form>
+      <p class="hint">Acts in the same group share people (or a prop, or a crew) — they can never be on at the same time, on any stage.</p>
+      <p class="hint" id="groupMsg"></p>
     </div></div>
   </section>
 
   <section id="view-acts" class="view">
     <div class="panel"><h2>Acts</h2><div class="body">
-      <table class="data"><thead><tr><th>Act</th><th>Category</th><th>Shows/day</th><th>Duration</th><th>Setup</th><th>Teardown</th><th>Break</th><th></th></tr></thead>
+      <table class="data"><thead><tr><th>Act</th><th>Category</th><th>Shows/day</th><th>Duration</th><th>Setup</th><th>Teardown</th><th>Break</th><th>Can't run against</th><th></th></tr></thead>
       <tbody id="actRows"></tbody></table>
     </div></div>
     <div class="panel"><h2 id="actFormTitle">Add an act</h2><div class="body">
@@ -171,13 +201,22 @@
         <label><span>Category</span><select id="actCategory"></select></label>
         <label><span>Shows per day</span><input id="actShows" type="number" min="1" max="20" value="3" required></label>
         <label><span>Duration (min)</span><input id="actDuration" type="number" min="5" step="5" value="30" required></label>
-        <label><span>Setup (min)</span><input id="actSetup" type="number" min="0" step="5" value="5" required></label>
-        <label><span>Teardown (min)</span><input id="actTeardown" type="number" min="0" step="5" value="5" required></label>
+        <label><span>Setup (min)</span><input id="actSetup" type="number" min="0" step="5" value="0" required></label>
+        <label><span>Teardown (min)</span><input id="actTeardown" type="number" min="0" step="5" value="0" required></label>
         <label><span>Break (min)</span><input id="actBreak" type="number" min="0" step="5" value="30" required></label>
+        <label><span>Can't run against</span><select id="actExclusive">
+          <option value="none">Nothing extra</option>
+          <option value="all">Any act (exclusive)</option>
+          <option value="own">Its own category</option>
+          <option value="category">A specific category</option>
+        </select></label>
+        <label id="actExclusiveCatWrap" style="display:none"><span>Category</span><select id="actExclusiveCat"></select></label>
+        <label id="actExceptWrap" style="display:none"><span>Except</span><select id="actExcept"></select></label>
         <button class="primary" type="submit">Save act</button>
         <button type="button" id="actCancel">Cancel</button>
       </form>
       <p class="hint">Setup, teardown and break are the buffers the conflict checker enforces: setup before a show, teardown after it, and break between an act's own shows. Deleting an act removes its placed shows.</p>
+      <p class="hint">"Can't run against" is per-act exclusivity — "Any act" means nothing runs against it, and Except lets one category through (for example, an exclusive joust that still allows childrens acts). It works both ways: an exclusive act already placed blocks anything new against it too.</p>
     </div></div>
     <div class="panel"><h2>Batch edit acts</h2><div class="body">
       <form id="batchForm" class="inline">
@@ -212,11 +251,13 @@
 <script>
 'use strict';
 /* ------------------------------------------------------------------ *
- * AtTheFaire Stage Manager — experiment.
+ * AtTheFaire Stage Manager 2026.
  * Data model mirrors the 2010 program: an event has days; each day has
  * a start/end time and a slot length; stages are columns; acts are placed
  * on the grid. Conflict rules are a direct port of v0.11's
- * isSlotAvailable() / isRowAvailable().
+ * isSlotAvailable() / isRowAvailable(), plus the 1.4.0 rules: a cap on
+ * how many acts of a type run at once, performer groups, and per-act
+ * exclusivity with an exception.
  * ------------------------------------------------------------------ */
 /* Bump this on every release; it shows in the header and footer so you can
  * tell at a glance whether you're looking at the current version.
@@ -225,8 +266,18 @@
  * 1.3.1 batch edit confirms in place (modal dialogs can be suppressed)
  * and all stored values are type-checked on load/import.
  * 1.3.2 title is AtTheFaire Stage Manager 2026; 'experiment' dropped
- * from the visible title. */
-const APP_VERSION = '1.3.2';
+ * from the visible title.
+ * 1.4.0 conflict rules: per-category cap (the 2010 conflicts number —
+ * at most that many acts of a type at once, default 2), performer
+ * groups (same group never overlaps), per-act exclusivity with an
+ * excepted category. The per-act conflicts field is retired.
+ * 1.4.1 slots the selected act can't use are greyed out on the grid,
+ * with the reason on hover — blocked slots used to look like ordinary
+ * empty cells.
+ * 1.4.2 demo acts are 30 min with setup and teardown 0.
+ * 1.4.3 the acts column sticks while the page scrolls and the act
+ * list scrolls inside itself, so the grid stays in view. */
+const APP_VERSION = '1.4.3';
 const STORE_KEY = 'atf-stage-manager-experiment-v2';
 
 const COLOR_HEX = { green:'#2e8b57', purple:'#8e44ad', orange:'#e67e22',
@@ -234,14 +285,17 @@ const COLOR_HEX = { green:'#2e8b57', purple:'#8e44ad', orange:'#e67e22',
 
 /* Act categories: a category owns the colour its acts show as.
  * Seed ids are stable so imports and migrations can refer to them. */
+/* maxConcurrent is the 2010 conflicts number, moved to the category:
+ * at most that many acts of this type at the same time (1 means no two
+ * ever overlap; null means no limit). Default 2, the 2010 default. */
 function defaultCategories() {
   return [
-    { id: 'cat-combat',    name: 'combat',         color: '#2e8b57' },
-    { id: 'cat-music',     name: 'music',          color: '#e67e22' },
-    { id: 'cat-comedy',    name: 'comedy',         color: '#c0392b' },
-    { id: 'cat-magic',     name: 'magic/juggling', color: '#8e44ad' },
-    { id: 'cat-demo',      name: 'demo',           color: '#7f8c8d' },
-    { id: 'cat-childrens', name: 'childrens',      color: '#2471a3' },
+    { id: 'cat-combat',    name: 'combat',         color: '#2e8b57', maxConcurrent: 2 },
+    { id: 'cat-music',     name: 'music',          color: '#e67e22', maxConcurrent: 2 },
+    { id: 'cat-comedy',    name: 'comedy',         color: '#c0392b', maxConcurrent: 2 },
+    { id: 'cat-magic',     name: 'magic/juggling', color: '#8e44ad', maxConcurrent: 2 },
+    { id: 'cat-demo',      name: 'demo',           color: '#7f8c8d', maxConcurrent: 2 },
+    { id: 'cat-childrens', name: 'childrens',      color: '#2471a3', maxConcurrent: 2 },
   ];
 }
 /* v0.11 demo colours already followed the category pattern:
@@ -261,6 +315,10 @@ function migrateState(s) {
     s.categories = defaultCategories();
     changed = true;
   }
+  s.categories.forEach(c => {
+    if (c.maxConcurrent === undefined) { c.maxConcurrent = 2; changed = true; }
+  });
+  if (!Array.isArray(s.groups)) { s.groups = []; changed = true; }
   const valid = new Set(s.categories.map(c => c.id));
   s.acts.forEach(a => {
     if (!a.categoryId || !valid.has(a.categoryId)) {
@@ -268,6 +326,11 @@ function migrateState(s) {
       changed = true;
     }
     if (a.color !== undefined) { delete a.color; changed = true; }
+    /* The 2010 per-act conflicts number is retired — its meaning now
+     * lives on the category as maxConcurrent. */
+    if ('conflicts' in a) { delete a.conflicts; changed = true; }
+    if (a.exclusive === undefined) { a.exclusive = 'none'; changed = true; }
+    if (a.exceptCategoryId === undefined) { a.exceptCategoryId = ''; changed = true; }
   });
   return changed;
 }
@@ -306,6 +369,8 @@ function sanitizeState(s) {
     set(c, 'id', asId(c.id));
     set(c, 'name', asStr(c.name) || 'category');
     if (typeof c.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(c.color)) set(c, 'color', '#7f8c8d');
+    /* null means no cap; anything else must be a whole number 1–20. */
+    if (c.maxConcurrent !== null) set(c, 'maxConcurrent', asNum(c.maxConcurrent, 2, 1, 20));
   });
   const catIds = new Set(s.categories.map(c => c.id));
   if (!catIds.has('cat-demo')) {
@@ -330,14 +395,28 @@ function sanitizeState(s) {
     if (typeof a.categoryId !== 'string' || !catIds.has(a.categoryId)) set(a, 'categoryId', 'cat-demo');
     set(a, 'showsPerDay', asNum(a.showsPerDay, 3, 1, 20));
     set(a, 'duration', asNum(a.duration, 30, 5));
-    set(a, 'setup', asNum(a.setup, 5, 0));
-    set(a, 'teardown', asNum(a.teardown, 5, 0));
+    set(a, 'setup', asNum(a.setup, 0, 0));
+    set(a, 'teardown', asNum(a.teardown, 0, 0));
     set(a, 'break', asNum(a.break, 30, 0));
-    set(a, 'conflicts', asNum(a.conflicts, 2, 0));
+    if ('conflicts' in a) { delete a.conflicts; changed = true; }
+    /* exclusive: 'none' | 'all' | 'own' | a category id. */
+    if (typeof a.exclusive !== 'string' || (a.exclusive !== 'none' && a.exclusive !== 'all' && a.exclusive !== 'own' && !catIds.has(a.exclusive))) set(a, 'exclusive', 'none');
+    if (typeof a.exceptCategoryId !== 'string' || (a.exceptCategoryId !== '' && !catIds.has(a.exceptCategoryId))) set(a, 'exceptCategoryId', '');
     if ('color' in a) { delete a.color; changed = true; }
   });
   const stageIds = new Set(s.stages.map(x => x.id));
   const actIds = new Set(s.acts.map(x => x.id));
+  if (!Array.isArray(s.groups)) { s.groups = []; changed = true; }
+  else {
+    const keptGroups = keepObjects(s.groups);
+    if (keptGroups.length !== s.groups.length) { s.groups = keptGroups; changed = true; }
+    s.groups.forEach(g => {
+      set(g, 'id', asId(g.id));
+      set(g, 'name', asStr(g.name) || 'Group');
+      const ids = Array.isArray(g.actIds) ? [...new Set(g.actIds.filter(id => typeof id === 'string' && actIds.has(id)))] : [];
+      if (JSON.stringify(ids) !== JSON.stringify(g.actIds || [])) { g.actIds = ids; changed = true; }
+    });
+  }
   if (!s.placements || typeof s.placements !== 'object') { s.placements = {}; changed = true; }
   s.days.forEach(d => {
     if (!Array.isArray(s.placements[d.id])) { s.placements[d.id] = []; changed = true; return; }
@@ -378,11 +457,12 @@ function seedState() {
   ];
   const acts = actDefs.map(([name, showsPerDay, categoryId]) => ({
     id: uid(), name, categoryId, showsPerDay,
-    duration: 30, setup: 5, teardown: 5, break: 30, conflicts: 2,
+    duration: 30, setup: 0, teardown: 0, break: 30,
+    exclusive: 'none', exceptCategoryId: '',
   }));
   const day = { id: uid(), name: 'Saturday', date: '', start: '11:00', end: '18:00', slotMinutes: 30 };
   return { eventName: 'At The Faire', days: [day], stages,
-           categories: defaultCategories(), acts, placements: { [day.id]: [] } };
+           categories: defaultCategories(), acts, groups: [], placements: { [day.id]: [] } };
 }
 
 let state = loadState();
@@ -444,6 +524,34 @@ function actRemaining(dayId, actId) {
 function sortedActs() {
   return [...state.acts].sort((a, b) => a.name.localeCompare(b.name));
 }
+function getGroup(id) { return (state.groups || []).find(g => g.id === id) || null; }
+/* Groups an act belongs to (acts sharing people, a prop or a crew). */
+function groupsOfAct(actId) {
+  return (state.groups || []).filter(g => Array.isArray(g.actIds) && g.actIds.includes(actId));
+}
+/* Slots a show occupies, setup before to teardown after — a performer
+ * setting up on one stage while their other act plays on another is
+ * still in two places at once. */
+function showWindow(day, act, startSlot) {
+  const slot = day.slotMinutes;
+  return {
+    start: startSlot - slotsFromMinutes(act.setup, slot),
+    end: startSlot + slotsFromMinutes(act.duration + act.teardown, slot),
+  };
+}
+function windowsOverlap(a, b) { return a.start < b.end && b.start < a.end; }
+/* Does ruleAct's exclusivity forbid otherAct running at the same time?
+ * Returns a reason string, or null. The exception always wins: an act
+ * in the excepted category is allowed even when the rule says "all". */
+function exclusiveBlocks(ruleAct, otherAct) {
+  if (!ruleAct || !ruleAct.exclusive || ruleAct.exclusive === 'none') return null;
+  const target = ruleAct.exclusive === 'own' ? ruleAct.categoryId : ruleAct.exclusive;
+  if (target !== 'all' && otherAct.categoryId !== target) return null;
+  if (ruleAct.exceptCategoryId && otherAct.categoryId === ruleAct.exceptCategoryId) return null;
+  if (target === 'all') return ruleAct.name + ' is exclusive — nothing runs against it.';
+  const cat = getCategory(target);
+  return ruleAct.name + ' can\'t run against ' + (cat ? cat.name : 'that category') + ' acts.';
+}
 
 /* ---------------- conflict rules (port of v0.11) ---------------- */
 /* A show occupies actRows = slotsFromMinutes(duration) display rows.
@@ -498,6 +606,38 @@ function canPlace(dayId, stageId, startSlot, actId) {
       if (p.actId === act.id && p.slot === i) {
         return { ok: false, reason: "I'm sorry, Dave. I'm afraid that slot is not available to you. So there." };
       }
+    }
+  }
+  /* 5. Groups: acts sharing people (or a prop, or a crew) must not
+   *    overlap anywhere on the grid.
+   * 6. Exclusivity, both ways: this act's rule can block the shows
+   *    already placed, and their rules can block this act. */
+  const win = showWindow(day, act, startSlot);
+  for (const p of placed) {
+    const other = actOf(p);
+    if (!other) continue;
+    if (!windowsOverlap(win, showWindow(day, other, p.slot))) continue;
+    const shared = groupsOfAct(act.id).find(g => (g.actIds || []).includes(other.id));
+    if (shared) {
+      return { ok: false, reason: `Shares performers with ${other.name} (group ${shared.name}).` };
+    }
+    const blockedByMine = exclusiveBlocks(act, other);
+    if (blockedByMine) return { ok: false, reason: blockedByMine };
+    const blockedByTheirs = exclusiveBlocks(other, act);
+    if (blockedByTheirs) return { ok: false, reason: blockedByTheirs };
+  }
+  /* 7. Category cap: at most maxConcurrent acts of a type at once
+   *    (the 2010 conflicts number; null means no limit). */
+  const cat = getCategory(act.categoryId);
+  if (cat && cat.maxConcurrent !== null && cat.maxConcurrent !== undefined) {
+    let n = 0;
+    for (const p of placed) {
+      const other = actOf(p);
+      if (!other || other.categoryId !== act.categoryId) continue;
+      if (windowsOverlap(win, showWindow(day, other, p.slot))) n++;
+    }
+    if (n >= cat.maxConcurrent) {
+      return { ok: false, reason: `Already ${n} ${cat.name} act${n === 1 ? '' : 's'} on at that time (limit ${cat.maxConcurrent}).` };
     }
   }
   return { ok: true };
@@ -600,6 +740,7 @@ $('tabs').addEventListener('click', e => {
   if (btn.dataset.view === 'days') renderDays();
   if (btn.dataset.view === 'stages') renderStages();
   if (btn.dataset.view === 'categories') renderCategories();
+  if (btn.dataset.view === 'groups') renderGroups();
   if (btn.dataset.view === 'acts') renderActs();
 });
 
@@ -673,8 +814,16 @@ function renderGrid() {
         for (let k = 1; k < rows; k++) covered.add(st.id + ':' + (r + k));
         html += `<td class="show" data-placement="${p.id}" rowspan="${rows}" style="background:${colorOf(act)}" title="${esc(act.name)} — click to remove">${esc(act.name)}</td>`;
       } else {
-        const cls = avail.has(key) ? 'slot available' : 'slot';
-        html += `<td class="${cls}" data-stage="${st.id}" data-slot="${r}"></td>`;
+        /* An empty cell the selected act can't use is greyed out, with
+         * the reason on hover — so a blocked slot is visible, not just
+         * missing its blue highlight. */
+        let cls = 'slot', title = '';
+        if (selectedActId && avail.has(key)) cls = 'slot available';
+        else if (selectedActId) {
+          const chk = canPlace(day.id, st.id, r, selectedActId);
+          if (!chk.ok) { cls = 'slot blocked'; title = ` title="${esc(chk.reason)}"`; }
+        }
+        html += `<td class="${cls}" data-stage="${st.id}" data-slot="${r}"${title}></td>`;
       }
     }
     html += `<td class="time">${fmtTime(startMin + r * day.slotMinutes)}</td></tr>`;
@@ -843,15 +992,25 @@ function renderActCategoryOptions() {
   const bcatCur = bcat.value;
   bcat.innerHTML = state.categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   if (state.categories.some(c => c.id === bcatCur)) bcat.value = bcatCur;
+  const exCat = $('actExclusiveCat');
+  const exCatCur = exCat.value;
+  exCat.innerHTML = state.categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if (state.categories.some(c => c.id === exCatCur)) exCat.value = exCatCur;
+  const exc = $('actExcept');
+  const excCur = exc.value;
+  exc.innerHTML = '<option value="">None</option>' +
+    state.categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if (excCur === '' || state.categories.some(c => c.id === excCur)) exc.value = excCur;
 }
 function renderCategories() {
   $('categoryRows').innerHTML = state.categories.map(c => {
     const n = state.acts.filter(a => a.categoryId === c.id).length;
+    const cap = c.maxConcurrent === null || c.maxConcurrent === undefined ? 'No limit' : c.maxConcurrent;
     return `<tr><td><span class="chip" style="background:${esc(c.color)};display:inline-block;vertical-align:middle"></span> ${esc(c.name)}</td>
-      <td>${esc(c.color)}</td><td>${n}</td>
+      <td>${esc(c.color)}</td><td>${cap}</td><td>${n}</td>
       <td><button data-edit-category="${c.id}">Edit</button>
           <button class="danger" data-del-category="${c.id}">Delete</button></td></tr>`;
-  }).join('') || '<tr><td colspan="4">No categories yet.</td></tr>';
+  }).join('') || '<tr><td colspan="5">No categories yet.</td></tr>';
 }
 $('categoryRows').addEventListener('click', e => {
   const editBtn = e.target.closest('[data-edit-category]');
@@ -859,6 +1018,7 @@ $('categoryRows').addEventListener('click', e => {
   if (editBtn) {
     const c = getCategory(editBtn.dataset.editCategory);
     $('categoryId').value = c.id; $('categoryName').value = c.name; $('categoryColor').value = c.color;
+    $('categoryCap').value = (c.maxConcurrent === null || c.maxConcurrent === undefined) ? '' : String(c.maxConcurrent);
     $('categoryFormTitle').textContent = 'Edit category';
     $('categoryName').focus();
   }
@@ -869,7 +1029,13 @@ $('categoryRows').addEventListener('click', e => {
     $('categoryMsg').textContent = '';
     armConfirm(delBtn, 'Sure?', () => {
       state.categories = state.categories.filter(x => x.id !== c.id);
-      saveState(); renderCategories();
+      /* Acts pointing their exclusivity at the deleted category fall
+       * back to nothing extra; the excepted category is cleared. */
+      state.acts.forEach(a => {
+        if (a.exclusive === c.id) a.exclusive = 'none';
+        if (a.exceptCategoryId === c.id) a.exceptCategoryId = '';
+      });
+      saveState(); renderCategories(); renderActs(); renderSchedule();
     });
   }
 });
@@ -877,21 +1043,93 @@ $('categoryForm').addEventListener('submit', e => {
   e.preventDefault();
   const name = $('categoryName').value.trim();
   const color = $('categoryColor').value;
+  const capValue = $('categoryCap').value;
+  const maxConcurrent = capValue === '' ? null : Number(capValue);
   if (!name) return;
   const id = $('categoryId').value;
-  if (id) Object.assign(getCategory(id), { name, color });
-  else state.categories.push({ id: uid(), name, color });
+  if (id) Object.assign(getCategory(id), { name, color, maxConcurrent });
+  else state.categories.push({ id: uid(), name, color, maxConcurrent });
   saveState();
-  $('categoryForm').reset(); $('categoryId').value = ''; $('categoryColor').value = '#7f8c8d';
+  $('categoryForm').reset(); $('categoryId').value = ''; $('categoryColor').value = '#7f8c8d'; $('categoryCap').value = '2';
   $('categoryFormTitle').textContent = 'Add a category';
   renderCategories(); renderActCategoryOptions(); renderSchedule();
 });
 $('categoryCancel').addEventListener('click', () => {
-  $('categoryForm').reset(); $('categoryId').value = ''; $('categoryColor').value = '#7f8c8d';
+  $('categoryForm').reset(); $('categoryId').value = ''; $('categoryColor').value = '#7f8c8d'; $('categoryCap').value = '2';
   $('categoryFormTitle').textContent = 'Add a category';
 });
 
+/* ---------------- groups view ---------------- */
+function renderGroupMembers(selected) {
+  $('groupMembers').innerHTML = sortedActs().map(a =>
+    `<label style="display:block"><input type="checkbox" data-group-act="${a.id}"${selected.includes(a.id) ? ' checked' : ''}> ${esc(a.name)}</label>`).join('')
+    || 'No acts yet — add some under Acts.';
+}
+function renderGroups() {
+  $('groupRows').innerHTML = (state.groups || []).map(g => {
+    const names = (g.actIds || []).map(id => { const a = getAct(id); return a ? a.name : null; }).filter(Boolean);
+    return `<tr><td>${esc(g.name)}</td><td>${names.length ? names.map(esc).join(', ') : '—'}</td>
+      <td><button data-edit-group="${g.id}">Edit</button>
+          <button class="danger" data-del-group="${g.id}">Delete</button></td></tr>`;
+  }).join('') || '<tr><td colspan="3">No groups yet.</td></tr>';
+  const editing = $('groupId').value ? getGroup($('groupId').value) : null;
+  renderGroupMembers(editing ? (editing.actIds || []) : []);
+}
+$('groupRows').addEventListener('click', e => {
+  const editBtn = e.target.closest('[data-edit-group]');
+  const delBtn = e.target.closest('[data-del-group]');
+  if (editBtn) {
+    const g = getGroup(editBtn.dataset.editGroup);
+    $('groupId').value = g.id; $('groupName').value = g.name;
+    $('groupFormTitle').textContent = 'Edit group';
+    renderGroupMembers(g.actIds || []);
+    $('groupName').focus();
+  }
+  if (delBtn) {
+    const g = getGroup(delBtn.dataset.delGroup);
+    armConfirm(delBtn, 'Sure?', () => {
+      state.groups = (state.groups || []).filter(x => x.id !== g.id);
+      saveState(); renderGroups(); renderSchedule();
+    });
+  }
+});
+$('groupForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('groupName').value.trim();
+  if (!name) return;
+  const actIds = [...document.querySelectorAll('[data-group-act]:checked')].map(el => el.dataset.groupAct);
+  const id = $('groupId').value;
+  if (id) Object.assign(getGroup(id), { name, actIds });
+  else (state.groups = state.groups || []).push({ id: uid(), name, actIds });
+  saveState();
+  $('groupForm').reset(); $('groupId').value = '';
+  renderGroupMembers([]);
+  $('groupFormTitle').textContent = 'Add a group';
+  renderGroups(); renderSchedule();
+});
+$('groupCancel').addEventListener('click', () => {
+  $('groupForm').reset(); $('groupId').value = '';
+  renderGroupMembers([]);
+  $('groupFormTitle').textContent = 'Add a group';
+});
+
 /* ---------------- acts view ---------------- */
+/* One-line summary of an act's exclusivity rule for the table. */
+function exclusivitySummary(a) {
+  if (!a || !a.exclusive || a.exclusive === 'none') return '—';
+  const except = a.exceptCategoryId ? getCategory(a.exceptCategoryId) : null;
+  const ex = except ? ` (except ${except.name})` : '';
+  if (a.exclusive === 'all') return 'Exclusive' + ex;
+  if (a.exclusive === 'own') return 'Own category' + ex;
+  const cat = getCategory(a.exclusive);
+  return cat ? cat.name + ex : '—';
+}
+function syncExclusiveWraps() {
+  const v = $('actExclusive').value;
+  $('actExclusiveCatWrap').style.display = v === 'category' ? '' : 'none';
+  $('actExceptWrap').style.display = v === 'none' ? 'none' : '';
+}
+$('actExclusive').addEventListener('change', syncExclusiveWraps);
 function renderActs() {
   renderActCategoryOptions();
   $('actRows').innerHTML = sortedActs().map(a => {
@@ -899,9 +1137,10 @@ function renderActs() {
     return `<tr><td>${esc(a.name)}</td>
      <td><span class="chip" style="background:${colorOf(a)};display:inline-block;vertical-align:middle"></span> ${cat ? esc(cat.name) : '—'}</td>
      <td>${a.showsPerDay}</td><td>${a.duration} min</td><td>${a.setup} min</td><td>${a.teardown} min</td><td>${a.break} min</td>
+     <td>${esc(exclusivitySummary(a))}</td>
      <td><button data-edit-act="${a.id}">Edit</button>
          <button class="danger" data-del-act="${a.id}">Delete</button></td></tr>`;
-  }).join('') || '<tr><td colspan="8">No acts yet.</td></tr>';
+  }).join('') || '<tr><td colspan="9">No acts yet.</td></tr>';
 }
 $('actRows').addEventListener('click', e => {
   const editBtn = e.target.closest('[data-edit-act]');
@@ -911,6 +1150,15 @@ $('actRows').addEventListener('click', e => {
     $('actId').value = a.id; $('actName').value = a.name; $('actCategory').value = a.categoryId || '';
     $('actShows').value = a.showsPerDay; $('actDuration').value = a.duration;
     $('actSetup').value = a.setup; $('actTeardown').value = a.teardown; $('actBreak').value = a.break;
+    const ex = a.exclusive || 'none';
+    if (ex === 'all' || ex === 'own' || ex === 'none') {
+      $('actExclusive').value = ex;
+    } else {
+      $('actExclusive').value = 'category';
+      $('actExclusiveCat').value = ex;
+    }
+    $('actExcept').value = a.exceptCategoryId || '';
+    syncExclusiveWraps();
     $('actFormTitle').textContent = 'Edit act';
     $('actName').focus();
   }
@@ -919,13 +1167,15 @@ $('actRows').addEventListener('click', e => {
     armConfirm(delBtn, 'Sure?', () => {
       state.acts = state.acts.filter(x => x.id !== a.id);
       for (const d of state.days) state.placements[d.id] = (state.placements[d.id] || []).filter(p => p.actId !== a.id);
+      (state.groups || []).forEach(g => { g.actIds = (g.actIds || []).filter(id => id !== a.id); });
       if (selectedActId === a.id) selectedActId = null;
-      saveState(); renderActs(); renderSchedule();
+      saveState(); renderActs(); renderGroups(); renderSchedule();
     });
   }
 });
 $('actForm').addEventListener('submit', e => {
   e.preventDefault();
+  const exChoice = $('actExclusive').value;
   const fields = {
     name: $('actName').value.trim(),
     categoryId: $('actCategory').value,
@@ -934,20 +1184,26 @@ $('actForm').addEventListener('submit', e => {
     setup: Number($('actSetup').value),
     teardown: Number($('actTeardown').value),
     break: Number($('actBreak').value),
+    exclusive: exChoice === 'category' ? ($('actExclusiveCat').value || 'none') : exChoice,
+    exceptCategoryId: exChoice === 'none' ? '' : ($('actExcept').value || ''),
   };
   if (!fields.name) return;
   const id = $('actId').value;
   if (id) Object.assign(getAct(id), fields);
-  else state.acts.push({ id: uid(), conflicts: 2, ...fields });
+  else state.acts.push({ id: uid(), ...fields });
   saveState();
   $('actForm').reset(); $('actId').value = '';
   $('actShows').value = 3; $('actDuration').value = 30;
-  $('actSetup').value = 5; $('actTeardown').value = 5; $('actBreak').value = 30;
+  $('actSetup').value = 0; $('actTeardown').value = 0; $('actBreak').value = 30;
+  $('actExclusive').value = 'none'; $('actExcept').value = '';
+  syncExclusiveWraps();
   $('actFormTitle').textContent = 'Add an act';
   renderActs(); renderSchedule();
 });
 $('actCancel').addEventListener('click', () => {
   $('actForm').reset(); $('actId').value = '';
+  $('actExclusive').value = 'none'; $('actExcept').value = '';
+  syncExclusiveWraps();
   $('actFormTitle').textContent = 'Add an act';
 });
 
@@ -1036,7 +1292,7 @@ $('importFile').addEventListener('change', e => {
       state.days.forEach(d => { if (!Array.isArray(state.placements[d.id])) state.placements[d.id] = []; });
       selectedDayId = state.days.length ? state.days[0].id : null;
       selectedActId = null;
-      saveState(); renderSchedule(); renderCategories(); renderActs();
+      saveState(); renderSchedule(); renderCategories(); renderGroups(); renderActs();
       $('importMsg').textContent = '';
       setStatus('Data imported.', 'ok');
     } catch (err) {
@@ -1051,7 +1307,7 @@ $('resetBtn').addEventListener('click', e => {
     state = seedState();
     selectedDayId = state.days[0].id;
     selectedActId = null;
-    saveState(); renderSchedule(); renderCategories(); renderActs();
+    saveState(); renderSchedule(); renderCategories(); renderGroups(); renderActs();
     setStatus('Reset to the v0.11 demo lineup.', 'ok');
   });
 });
