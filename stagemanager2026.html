@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AtTheFaire Stage Manager 2026</title>
+<style>
+  :root { --ink:#1c1c1c; --muted:#666; --line:#d8d8d8; --bg:#fafafa; --card:#fff;
+          --accent:#1a5fb4; --ok:#e6f4ea; --warn:#fff3cd; --bad:#fdecea; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+         color:var(--ink); background:var(--bg); }
+  header { background:#20242b; color:#fff; padding:14px 20px; }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; color:#c9d1d9; font-size:13px; }
+  nav { display:flex; gap:6px; padding:10px 20px 0; }
+  nav button { border:1px solid var(--line); background:#fff; padding:8px 16px;
+               border-radius:6px 6px 0 0; cursor:pointer; font-size:14px; }
+  nav button.active { background:var(--card); border-bottom-color:var(--card);
+                      font-weight:700; color:var(--accent); }
+  main { background:var(--card); border-top:1px solid var(--line); padding:18px 20px 40px;
+         min-height:60vh; }
+  .view { display:none; } .view.active { display:block; }
+  .row { display:flex; gap:20px; align-items:flex-start; }
+  .status { margin:0 0 12px; padding:9px 12px; border-radius:6px; background:#eef4ff;
+            border:1px solid #c8dcf5; min-height:38px; }
+  .status.error { background:var(--bad); border-color:#f5c6cb; }
+  .status.ok { background:var(--ok); border-color:#b6dfc0; }
+  /* act list */
+  .acts { width:280px; flex:none; border:1px solid var(--line); border-radius:8px;
+          overflow:hidden; }
+  .acts h2, .panel h2 { margin:0; padding:10px 12px; background:#f0f0f0; font-size:14px; }
+  .acts ul { list-style:none; margin:0; padding:6px; }
+  .acts li { display:flex; gap:8px; align-items:center; padding:7px 8px; border-radius:6px;
+             cursor:pointer; }
+  .acts li:hover { background:#f2f2f2; }
+  .acts li.selected { outline:2px solid var(--accent); background:#eaf2fd; }
+  .acts li.spent { opacity:.45; cursor:default; }
+  .chip { width:14px; height:14px; border-radius:50%; flex:none; border:1px solid rgba(0,0,0,.25); }
+  .acts .name { flex:1; }
+  .acts .left { font-size:12px; color:var(--muted); white-space:nowrap; }
+  /* grid */
+  .gridwrap { overflow:auto; flex:1; border:1px solid var(--line); border-radius:8px; }
+  table.grid { border-collapse:collapse; width:100%; }
+  .grid th, .grid td { border:1px solid var(--line); padding:0; }
+  .grid th { background:#f0f0f0; padding:8px; font-size:13px; position:sticky; top:0; }
+  .grid td.time { background:#f7f7f7; font-size:12px; color:var(--muted); text-align:right;
+                  padding:4px 8px; white-space:nowrap; width:64px; }
+  .grid td.slot { height:30px; min-width:130px; cursor:pointer; }
+  .grid td.slot:hover { background:#f0f6ff; }
+  .grid td.slot.available { background:#e3f0ff; box-shadow:inset 0 0 0 2px #9cc3f5; }
+  .grid td.show { color:#fff; font-weight:600; font-size:13px; text-align:center;
+                  vertical-align:middle; cursor:pointer; padding:4px; }
+  .grid td.show:hover { filter:brightness(1.15); }
+  .grid td.blocked { background:repeating-linear-gradient(45deg,#f6f6f6,#f6f6f6 6px,#efefef 6px,#efefef 12px); }
+  /* forms + tables */
+  .panel { border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-bottom:20px; }
+  .panel .body { padding:14px; }
+  table.data { border-collapse:collapse; width:100%; }
+  .data th, .data td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left;
+                       font-size:14px; }
+  .data th { background:#f7f7f7; }
+  form.inline { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+  label { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
+  label > span { font-weight:600; }
+  input, select { font:inherit; padding:7px 9px; border:1px solid #bbb; border-radius:6px;
+                  background:#fff; color:var(--ink); }
+  input[type="color"] { padding:2px; width:52px; height:34px; }
+  button { font:inherit; padding:8px 14px; border-radius:6px; border:1px solid #bbb;
+           background:#fff; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:#a00; border-color:#d99; }
+  button:disabled { opacity:.5; cursor:default; }
+  .hint { font-size:12px; color:var(--muted); margin:6px 0 0; }
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  footer { padding:16px 20px; color:var(--muted); font-size:12px; }
+  footer button { font-size:12px; padding:5px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AtTheFaire Stage Manager 2026 <span id="appVersion" style="font-weight:400;font-size:14px;margin-left:8px;"></span></h1>
+  <p>Modern take on the 2010 scheduling grid. Same conflict rules as v0.11; days, stages and acts are now configurable, and everything saves in this browser. Nothing here is pushed anywhere.</p>
+</header>
+<nav id="tabs">
+  <button data-view="schedule" class="active">Schedule</button>
+  <button data-view="days">Days</button>
+  <button data-view="stages">Stages</button>
+  <button data-view="categories">Categories</button>
+  <button data-view="acts">Acts</button>
+</nav>
+<main>
+  <section id="view-schedule" class="view active">
+    <div class="toolbar">
+      <label><span>Day</span><select id="daySelect"></select></label>
+      <span id="daySummary" class="hint"></span>
+      <span style="flex:1"></span>
+      <button id="clearDayBtn" class="danger">Clear this day</button>
+    </div>
+    <p id="status" class="status">Pick an act, then click an empty slot to place a show. Click a placed show to remove it.</p>
+    <div class="row">
+      <div class="acts"><h2>Acts — click one to select it</h2><ul id="actList"></ul></div>
+      <div class="gridwrap"><table class="grid" id="grid"></table></div>
+    </div>
+  </section>
+
+  <section id="view-days" class="view">
+    <div class="panel"><h2>Days</h2><div class="body">
+      <table class="data"><thead><tr><th>Name</th><th>Date</th><th>Hours</th><th>Slot length</th><th>Shows placed</th><th></th></tr></thead>
+      <tbody id="dayRows"></tbody></table>
+    </div></div>
+    <div class="panel"><h2 id="dayFormTitle">Add a day</h2><div class="body">
+      <form id="dayForm" class="inline">
+        <input type="hidden" id="dayId">
+        <label><span>Name</span><input id="dayName" required maxlength="60" placeholder="Saturday"></label>
+        <label><span>Date</span><input id="dayDate" type="date"></label>
+        <label><span>Starts</span><input id="dayStart" type="time" value="11:00" required></label>
+        <label><span>Ends</span><input id="dayEnd" type="time" value="18:00" required></label>
+        <label><span>Slot length</span><select id="daySlot"><option>15</option><option selected>30</option><option>60</option></select></label>
+        <button class="primary" type="submit">Save day</button>
+        <button type="button" id="dayCancel">Cancel</button>
+      </form>
+      <p class="hint">Changing a day's hours or slot length clears that day's placed shows, because the slots move.</p>
+      <p class="hint" id="dayMsg"></p>
+    </div></div>
+  </section>
+
+  <section id="view-stages" class="view">
+    <div class="panel"><h2>Stages</h2><div class="body">
+      <table class="data"><thead><tr><th>Name</th><th>Shows placed</th><th></th></tr></thead>
+      <tbody id="stageRows"></tbody></table>
+    </div></div>
+    <div class="panel"><h2 id="stageFormTitle">Add a stage</h2><div class="body">
+      <form id="stageForm" class="inline">
+        <input type="hidden" id="stageId">
+        <label><span>Name</span><input id="stageName" required maxlength="60" placeholder="Minstrel Stage"></label>
+        <button class="primary" type="submit">Save stage</button>
+        <button type="button" id="stageCancel">Cancel</button>
+      </form>
+      <p class="hint">Deleting a stage removes every show placed on it.</p>
+    </div></div>
+  </section>
+
+  <section id="view-categories" class="view">
+    <div class="panel"><h2>Categories</h2><div class="body">
+      <table class="data"><thead><tr><th>Category</th><th>Colour</th><th>Acts</th><th></th></tr></thead>
+      <tbody id="categoryRows"></tbody></table>
+    </div></div>
+    <div class="panel"><h2 id="categoryFormTitle">Add a category</h2><div class="body">
+      <form id="categoryForm" class="inline">
+        <input type="hidden" id="categoryId">
+        <label><span>Name</span><input id="categoryName" required maxlength="60" placeholder="combat"></label>
+        <label><span>Colour</span><input id="categoryColor" type="color" value="#7f8c8d"></label>
+        <button class="primary" type="submit">Save category</button>
+        <button type="button" id="categoryCancel">Cancel</button>
+      </form>
+      <p class="hint">A category's colour is the colour its acts show as on the grid — change it here and every act in the category changes. A category with acts in it can't be deleted; move its acts to another category first.</p>
+      <p class="hint" id="categoryMsg"></p>
+    </div></div>
+  </section>
+
+  <section id="view-acts" class="view">
+    <div class="panel"><h2>Acts</h2><div class="body">
+      <table class="data"><thead><tr><th>Act</th><th>Category</th><th>Shows/day</th><th>Duration</th><th>Setup</th><th>Teardown</th><th>Break</th><th></th></tr></thead>
+      <tbody id="actRows"></tbody></table>
+    </div></div>
+    <div class="panel"><h2 id="actFormTitle">Add an act</h2><div class="body">
+      <form id="actForm" class="inline">
+        <input type="hidden" id="actId">
+        <label><span>Name</span><input id="actName" required maxlength="80" placeholder="Joust Evolution"></label>
+        <label><span>Category</span><select id="actCategory"></select></label>
+        <label><span>Shows per day</span><input id="actShows" type="number" min="1" max="20" value="3" required></label>
+        <label><span>Duration (min)</span><input id="actDuration" type="number" min="5" step="5" value="30" required></label>
+        <label><span>Setup (min)</span><input id="actSetup" type="number" min="0" step="5" value="5" required></label>
+        <label><span>Teardown (min)</span><input id="actTeardown" type="number" min="0" step="5" value="5" required></label>
+        <label><span>Break (min)</span><input id="actBreak" type="number" min="0" step="5" value="30" required></label>
+        <button class="primary" type="submit">Save act</button>
+        <button type="button" id="actCancel">Cancel</button>
+      </form>
+      <p class="hint">Setup, teardown and break are the buffers the conflict checker enforces: setup before a show, teardown after it, and break between an act's own shows. Deleting an act removes its placed shows.</p>
+    </div></div>
+    <div class="panel"><h2>Batch edit acts</h2><div class="body">
+      <form id="batchForm" class="inline">
+        <label><span>Change</span><select id="batchField">
+          <option value="duration">Duration (min)</option>
+          <option value="setup">Setup (min)</option>
+          <option value="teardown">Teardown (min)</option>
+          <option value="break">Break (min)</option>
+          <option value="showsPerDay">Shows per day</option>
+          <option value="categoryId">Category</option>
+        </select></label>
+        <label><span>For</span><select id="batchScope">
+          <option value="">All acts</option>
+        </select></label>
+        <label id="batchValueWrap"><span>To</span><input id="batchValue" type="number" min="5" step="5" value="25" required></label>
+        <label id="batchCategoryWrap" style="display:none"><span>To</span><select id="batchCategory"></select></label>
+        <button class="primary" type="submit" id="batchApplyBtn">Apply to acts</button>
+      </form>
+      <p class="hint" id="batchResult">Applies to every act, or only the acts in one category. Clicking Apply shows what will change — click it again to confirm.</p>
+    </div></div>
+  </section>
+</main>
+<footer>
+  <button id="exportBtn">Export data (JSON)</button>
+  <button id="importBtn">Import data (JSON)</button>
+  <input type="file" id="importFile" accept="application/json" hidden>
+  <button id="resetBtn" class="danger">Reset to v0.11 demo data</button>
+  <span id="importMsg" style="margin-left:10px;"></span>
+  <span id="appVersionFoot" style="margin-left:10px;"></span>
+  <span style="margin-left:10px;">Data lives only in this browser (localStorage). No account, no server, nothing is sent anywhere.</span>
+</footer>
+<script>
+'use strict';
+/* ------------------------------------------------------------------ *
+ * AtTheFaire Stage Manager — experiment.
+ * Data model mirrors the 2010 program: an event has days; each day has
+ * a start/end time and a slot length; stages are columns; acts are placed
+ * on the grid. Conflict rules are a direct port of v0.11's
+ * isSlotAvailable() / isRowAvailable().
+ * ------------------------------------------------------------------ */
+/* Bump this on every release; it shows in the header and footer so you can
+ * tell at a glance whether you're looking at the current version.
+ * History: 1.0.0 first experiment; 1.1.0 default show 30 min (was 60);
+ * 1.2.0 act categories own the colours; 1.3.0 batch edit acts;
+ * 1.3.1 batch edit confirms in place (modal dialogs can be suppressed)
+ * and all stored values are type-checked on load/import.
+ * 1.3.2 title is AtTheFaire Stage Manager 2026; 'experiment' dropped
+ * from the visible title. */
+const APP_VERSION = '1.3.2';
+const STORE_KEY = 'atf-stage-manager-experiment-v2';
+
+const COLOR_HEX = { green:'#2e8b57', purple:'#8e44ad', orange:'#e67e22',
+                    red:'#c0392b', blue:'#2471a3', grey:'#7f8c8d', gray:'#7f8c8d' };
+
+/* Act categories: a category owns the colour its acts show as.
+ * Seed ids are stable so imports and migrations can refer to them. */
+function defaultCategories() {
+  return [
+    { id: 'cat-combat',    name: 'combat',         color: '#2e8b57' },
+    { id: 'cat-music',     name: 'music',          color: '#e67e22' },
+    { id: 'cat-comedy',    name: 'comedy',         color: '#c0392b' },
+    { id: 'cat-magic',     name: 'magic/juggling', color: '#8e44ad' },
+    { id: 'cat-demo',      name: 'demo',           color: '#7f8c8d' },
+    { id: 'cat-childrens', name: 'childrens',      color: '#2471a3' },
+  ];
+}
+/* v0.11 demo colours already followed the category pattern:
+ * green combat, orange music, red comedy, purple magic/juggling,
+ * blue childrens, grey demo. */
+const COLOR_TO_CATEGORY = { green: 'cat-combat', orange: 'cat-music',
+  red: 'cat-comedy', purple: 'cat-magic', blue: 'cat-childrens',
+  grey: 'cat-demo', gray: 'cat-demo' };
+
+function getCategory(id) { return state.categories.find(c => c.id === id) || null; }
+
+/* Bring older saved/imported data up to the category model. Returns true
+ * when anything changed. Acts keep their colour via their category. */
+function migrateState(s) {
+  let changed = false;
+  if (!Array.isArray(s.categories) || !s.categories.length) {
+    s.categories = defaultCategories();
+    changed = true;
+  }
+  const valid = new Set(s.categories.map(c => c.id));
+  s.acts.forEach(a => {
+    if (!a.categoryId || !valid.has(a.categoryId)) {
+      a.categoryId = (a.color && COLOR_TO_CATEGORY[a.color]) || 'cat-demo';
+      changed = true;
+    }
+    if (a.color !== undefined) { delete a.color; changed = true; }
+  });
+  return changed;
+}
+
+/* Coerce every stored value to its proper type, so a number saved as text
+ * (or a hand-edited import) can never silently break the display or the
+ * maths — e.g. a slot length of "30" would otherwise read as changed on
+ * every edit and wipe a day's shows. Returns true when anything was fixed. */
+function sanitizeState(s) {
+  let changed = false;
+  const set = (obj, key, value) => { if (obj[key] !== value) { obj[key] = value; changed = true; } };
+  const asNum = (v, fallback, min, max) => {
+    let n = Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    n = Math.round(n);
+    if (min !== undefined) n = Math.max(min, n);
+    if (max !== undefined) n = Math.min(max, n);
+    return n;
+  };
+  const asStr = v => (v === undefined || v === null) ? '' : String(v);
+  const asId = v => (v === undefined || v === null) ? uid() : String(v);
+  const isTime = v => typeof v === 'string' && /^\d{2}:\d{2}$/.test(v);
+  if (typeof s.eventName !== 'string') set(s, 'eventName', 'At The Faire');
+  const keepObjects = arr => Array.isArray(arr) ? arr.filter(x => x && typeof x === 'object') : [];
+  [['days'], ['stages'], ['acts']].forEach(([k]) => {
+    const kept = keepObjects(s[k]);
+    if (kept.length !== (s[k] || []).length) { s[k] = kept; changed = true; }
+  });
+  if (!Array.isArray(s.categories) || !s.categories.length) { s.categories = defaultCategories(); changed = true; }
+  else {
+    const kept = keepObjects(s.categories);
+    if (kept.length !== s.categories.length) { s.categories = kept; changed = true; }
+    if (!s.categories.length) { s.categories = defaultCategories(); changed = true; }
+  }
+  s.categories.forEach(c => {
+    set(c, 'id', asId(c.id));
+    set(c, 'name', asStr(c.name) || 'category');
+    if (typeof c.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(c.color)) set(c, 'color', '#7f8c8d');
+  });
+  const catIds = new Set(s.categories.map(c => c.id));
+  if (!catIds.has('cat-demo')) {
+    s.categories.push({ id: 'cat-demo', name: 'demo', color: '#7f8c8d' });
+    catIds.add('cat-demo'); changed = true;
+  }
+  s.days.forEach(d => {
+    set(d, 'id', asId(d.id));
+    set(d, 'name', asStr(d.name) || 'Day');
+    set(d, 'date', asStr(d.date));
+    if (!isTime(d.start)) set(d, 'start', '11:00');
+    if (!isTime(d.end)) set(d, 'end', '18:00');
+    set(d, 'slotMinutes', asNum(d.slotMinutes, 30, 5, 120));
+  });
+  s.stages.forEach(x => {
+    set(x, 'id', asId(x.id));
+    set(x, 'name', asStr(x.name) || 'Stage');
+  });
+  s.acts.forEach(a => {
+    set(a, 'id', asId(a.id));
+    set(a, 'name', asStr(a.name) || 'Act');
+    if (typeof a.categoryId !== 'string' || !catIds.has(a.categoryId)) set(a, 'categoryId', 'cat-demo');
+    set(a, 'showsPerDay', asNum(a.showsPerDay, 3, 1, 20));
+    set(a, 'duration', asNum(a.duration, 30, 5));
+    set(a, 'setup', asNum(a.setup, 5, 0));
+    set(a, 'teardown', asNum(a.teardown, 5, 0));
+    set(a, 'break', asNum(a.break, 30, 0));
+    set(a, 'conflicts', asNum(a.conflicts, 2, 0));
+    if ('color' in a) { delete a.color; changed = true; }
+  });
+  const stageIds = new Set(s.stages.map(x => x.id));
+  const actIds = new Set(s.acts.map(x => x.id));
+  if (!s.placements || typeof s.placements !== 'object') { s.placements = {}; changed = true; }
+  s.days.forEach(d => {
+    if (!Array.isArray(s.placements[d.id])) { s.placements[d.id] = []; changed = true; return; }
+    const before = s.placements[d.id].length;
+    s.placements[d.id] = s.placements[d.id].filter(p => p && typeof p === 'object'
+      && typeof p.stageId === 'string' && stageIds.has(p.stageId)
+      && typeof p.actId === 'string' && actIds.has(p.actId));
+    s.placements[d.id].forEach(p => {
+      set(p, 'id', asId(p.id));
+      set(p, 'slot', asNum(p.slot, 0, 0));
+    });
+    if (s.placements[d.id].length !== before) changed = true;
+  });
+  return changed;
+}
+
+function uid() {
+  return (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.floor(Math.random() * 1e9);
+}
+
+/* Seed data: the v0.11 lineup from stagemanager011.html. */
+function seedState() {
+  const stages = ['Coliseum Arena','Gatehouse Stage','Minstrel Stage','Royal Pavilion',
+                  'South Meadow','Theater on the Green','Tournament Field']
+    .map(name => ({ id: uid(), name }));
+  const actDefs = [
+    ['Joust Evolution',3,'cat-combat'],['Guardians of the Black Forest',4,'cat-combat'],
+    ['Friendly Fire',3,'cat-magic'],['Orckes & Trolles',5,'cat-music'],
+    ['Shattock Schoole of Defense',3,'cat-comedy'],['Dragon Stories',4,'cat-childrens'],
+    ['CRVA Glass-blowing',6,'cat-demo'],['Sons of the Mist',3,'cat-combat'],
+    ["Lord Drake's Mystic Magic Show",3,'cat-magic'],['SHARDS: The Talent of Love',4,'cat-comedy'],
+    ['Clan MacSwade: highland',3,'cat-demo'],['Kids With Fire',4,'cat-magic'],
+    ['Crazy Celts in Kilts',4,'cat-comedy'],['G.P. Weapon Demo',4,'cat-combat'],
+    ['Rakset al-Nehri',2,'cat-music'],['Enchanted Garden',3,'cat-childrens'],
+    ['Traveling Knights of Evengard',4,'cat-comedy'],['SUN: Habeas Corpus',3,'cat-music'],
+    ['Extra Act',3,'cat-demo'],
+  ];
+  const acts = actDefs.map(([name, showsPerDay, categoryId]) => ({
+    id: uid(), name, categoryId, showsPerDay,
+    duration: 30, setup: 5, teardown: 5, break: 30, conflicts: 2,
+  }));
+  const day = { id: uid(), name: 'Saturday', date: '', start: '11:00', end: '18:00', slotMinutes: 30 };
+  return { eventName: 'At The Faire', days: [day], stages,
+           categories: defaultCategories(), acts, placements: { [day.id]: [] } };
+}
+
+let state = loadState();
+let _fixed = migrateState(state);
+_fixed = sanitizeState(state) || _fixed;
+if (_fixed) saveState();
+let selectedDayId = state.days.length ? state.days[0].id : null;
+let selectedActId = null;
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && Array.isArray(s.days) && Array.isArray(s.stages) && Array.isArray(s.acts)) {
+        s.placements = s.placements || {};
+        s.days.forEach(d => { if (!Array.isArray(s.placements[d.id])) s.placements[d.id] = []; });
+        return s;
+      }
+    }
+  } catch (e) { /* fall through to seed */ }
+  const s = seedState();
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) {}
+  return s;
+}
+function saveState() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+/* ---------------- time helpers ---------------- */
+function toMinutes(hhmm) { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; }
+function fmtTime(minutes) {
+  let h = Math.floor(minutes / 60), m = minutes % 60;
+  const ampm = h >= 12 ? 'pm' : 'am';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + String(m).padStart(2, '0') + ampm;
+}
+function slotsPerDay(day) {
+  return Math.max(1, Math.floor((toMinutes(day.end) - toMinutes(day.start)) / day.slotMinutes));
+}
+/* v0.11 slotsFromMinutes: ceil(minutes/slot), 0 stays 0. */
+function slotsFromMinutes(minutes, slot) {
+  if (minutes <= 0) return 0;
+  return Math.floor((minutes - 1) / slot) + 1;
+}
+
+/* ---------------- lookups ---------------- */
+function getDay(id) { return state.days.find(d => d.id === id) || null; }
+function getStage(id) { return state.stages.find(s => s.id === id) || null; }
+function getAct(id) { return state.acts.find(a => a.id === id) || null; }
+function dayPlacements(dayId) { return state.placements[dayId] || []; }
+function actPlacedCount(dayId, actId) {
+  return dayPlacements(dayId).filter(p => p.actId === actId).length;
+}
+function actRemaining(dayId, actId) {
+  const act = getAct(actId);
+  return act ? act.showsPerDay - actPlacedCount(dayId, actId) : 0;
+}
+function sortedActs() {
+  return [...state.acts].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/* ---------------- conflict rules (port of v0.11) ---------------- */
+/* A show occupies actRows = slotsFromMinutes(duration) display rows.
+ * Teardown rows after it are enforced by availability, not displayed.
+ * Returns { ok: true } or { ok: false, reason }.
+ */
+function canPlace(dayId, stageId, startSlot, actId) {
+  const day = getDay(dayId), act = getAct(actId), stage = getStage(stageId);
+  if (!day || !act || !stage) return { ok: false, reason: 'Missing day, stage or act.' };
+  if (actRemaining(dayId, actId) <= 0) {
+    return { ok: false, reason: act.name + ' has no shows left to schedule today.' };
+  }
+  const slot = day.slotMinutes;
+  const total = slotsPerDay(day);
+  const placed = dayPlacements(dayId);
+  const actRows = slotsFromMinutes(act.duration, slot);
+  const betweenRows = slotsFromMinutes(act.setup + act.teardown + act.break, slot);
+  const showAt = (stId, s) => placed.find(p => p.stageId === stId && p.slot === s) || null;
+  const actOf = p => getAct(p.actId);
+
+  /* 1. Scan back on this stage: an earlier show's duration + teardown
+   *    (plus break if it is this same act) must not run past startSlot. */
+  for (let i = startSlot; i >= 0; i--) {
+    const p = showAt(stageId, i);
+    if (!p) continue;
+    const prev = actOf(p);
+    let mins = prev.duration + prev.teardown;
+    if (prev.id === act.id) mins += prev.break;
+    if (i + slotsFromMinutes(mins, slot) > startSlot) {
+      return { ok: false, reason: 'An act earlier in the day would conflict.' };
+    }
+    /* v0.11 scans all the way back; keep doing so — a long-break earlier
+     * show can still matter even when a nearer short show does not reach. */
+  }
+  /* 2. End-of-day guard (v0.08 fix). */
+  const slotsUsed = slotsFromMinutes(act.duration + act.teardown, slot);
+  if (startSlot + slotsUsed > total) {
+    return { ok: false, reason: 'That would run past the end of the day.' };
+  }
+  /* 3. Scan forward on this stage over the show's own footprint. */
+  for (let i = startSlot; i < startSlot + slotsUsed; i++) {
+    if (showAt(stageId, i)) {
+      return { ok: false, reason: 'This would conflict with an act later in the day.' };
+    }
+  }
+  /* 4. Cross-grid: this act must not appear anywhere in the window
+   *    around the new show (setup + teardown + break either side). */
+  const startRow = Math.max(0, startSlot - betweenRows - actRows + 1);
+  const endRow = startSlot + actRows + betweenRows;
+  for (let i = startRow; i < endRow; i++) {
+    for (const p of placed) {
+      if (p.actId === act.id && p.slot === i) {
+        return { ok: false, reason: "I'm sorry, Dave. I'm afraid that slot is not available to you. So there." };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+/* Which start slots on a stage could take this act (for highlighting). */
+function availableSlots(dayId, stageId, actId) {
+  const day = getDay(dayId);
+  if (!day) return [];
+  const out = [];
+  for (let s = 0; s < slotsPerDay(day); s++) {
+    if (canPlace(dayId, stageId, s, actId).ok) out.push(s);
+  }
+  return out;
+}
+
+/* ---------------- mutations ---------------- */
+function placeShow(dayId, stageId, startSlot, actId) {
+  const check = canPlace(dayId, stageId, startSlot, actId);
+  if (!check.ok) return check;
+  dayPlacements(dayId).push({ id: uid(), actId, stageId, slot: startSlot });
+  saveState();
+  return { ok: true };
+}
+function removePlacement(dayId, placementId) {
+  const list = dayPlacements(dayId);
+  const i = list.findIndex(p => p.id === placementId);
+  if (i >= 0) { list.splice(i, 1); saveState(); return true; }
+  return false;
+}
+/* Placement covering a grid cell (its show's duration rows), if any. */
+function placementAt(dayId, stageId, slot) {
+  const day = getDay(dayId);
+  if (!day) return null;
+  for (const p of dayPlacements(dayId)) {
+    if (p.stageId !== stageId) continue;
+    const act = getAct(p.actId);
+    if (!act) continue;
+    const rows = slotsFromMinutes(act.duration, day.slotMinutes);
+    if (slot >= p.slot && slot < p.slot + rows) return p;
+  }
+  return null;
+}
+</script>
+<script>
+'use strict';
+/* ------------------------------------------------------------------ *
+ * Rendering + UI wiring. (Pure scheduling logic lives in the first
+ * script block so it can be tested without a DOM.)
+ * ------------------------------------------------------------------ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* An act's colour is its category's colour. The act.color fallback only
+ * covers old data that hasn't been migrated yet. */
+function colorOf(act) {
+  const cat = act.categoryId ? getCategory(act.categoryId) : null;
+  if (cat) return cat.color;
+  if (act.color) return COLOR_HEX[act.color] || act.color;
+  return '#7f8c8d';
+}
+
+function setStatus(msg, kind) {
+  const el = $('status');
+  el.textContent = msg;
+  el.className = 'status' + (kind ? ' ' + kind : '');
+}
+
+/* Two-step inline confirmation. Modal confirm()/alert() dialogs can be
+ * suppressed by some browsers and viewers, which silently cancels the
+ * action (or swallows the message) with no feedback — so destructive
+ * actions confirm in place instead: first click arms the button, second
+ * click does it. The arm expires after a few seconds. */
+function armConfirm(btn, armLabel, fn) {
+  if (btn.dataset.armed === '1') {
+    delete btn.dataset.armed;
+    btn.textContent = btn.dataset.label;
+    clearTimeout(btn._armTimer);
+    fn();
+    return;
+  }
+  btn.dataset.armed = '1';
+  btn.dataset.label = btn.textContent;
+  btn.textContent = armLabel;
+  clearTimeout(btn._armTimer);
+  btn._armTimer = setTimeout(() => {
+    if (btn.dataset.armed === '1') {
+      delete btn.dataset.armed;
+      btn.textContent = btn.dataset.label;
+    }
+  }, 6000);
+}
+
+/* ---------------- tabs ---------------- */
+$('tabs').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-view]');
+  if (!btn) return;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('main .view').forEach(v => v.classList.toggle('active', v.id === 'view-' + btn.dataset.view));
+  if (btn.dataset.view === 'schedule') renderSchedule();
+  if (btn.dataset.view === 'days') renderDays();
+  if (btn.dataset.view === 'stages') renderStages();
+  if (btn.dataset.view === 'categories') renderCategories();
+  if (btn.dataset.view === 'acts') renderActs();
+});
+
+/* ---------------- schedule view ---------------- */
+function renderDaySelect() {
+  const sel = $('daySelect');
+  sel.innerHTML = state.days.map(d =>
+    `<option value="${d.id}"${d.id === selectedDayId ? ' selected' : ''}>${esc(d.name)}${d.date ? ' — ' + esc(d.date) : ''}</option>`).join('');
+  const day = getDay(selectedDayId);
+  $('daySummary').textContent = day
+    ? `${fmtTime(toMinutes(day.start))}–${fmtTime(toMinutes(day.end))}, ${day.slotMinutes}-minute slots, ${slotsPerDay(day)} slots, ${dayPlacements(day.id).length} shows placed`
+    : '';
+}
+$('daySelect').addEventListener('change', e => {
+  selectedDayId = e.target.value;
+  selectedActId = null;
+  renderSchedule();
+});
+
+function renderActList() {
+  const day = getDay(selectedDayId);
+  const ul = $('actList');
+  if (!day) { ul.innerHTML = '<li>No day yet — add one under Days.</li>'; return; }
+  ul.innerHTML = sortedActs().map(a => {
+    const left = actRemaining(day.id, a.id);
+    return `<li data-act="${a.id}" class="${a.id === selectedActId ? 'selected' : ''}${left <= 0 ? ' spent' : ''}">
+      <span class="chip" style="background:${colorOf(a)}"></span>
+      <span class="name">${esc(a.name)}</span>
+      <span class="left">${left} of ${a.showsPerDay} left</span></li>`;
+  }).join('') || '<li>No acts yet — add some under Acts.</li>';
+}
+$('actList').addEventListener('click', e => {
+  const li = e.target.closest('li[data-act]');
+  if (!li) return;
+  const day = getDay(selectedDayId);
+  if (day && actRemaining(day.id, li.dataset.act) <= 0) {
+    setStatus(getAct(li.dataset.act).name + ' has no shows left today.', 'error');
+    return;
+  }
+  selectedActId = (selectedActId === li.dataset.act) ? null : li.dataset.act;
+  renderSchedule();
+  if (selectedActId) {
+    const a = getAct(selectedActId);
+    setStatus(`${a.name} selected — available slots are highlighted. Click one to place a ${a.duration}-minute show.`);
+  }
+});
+
+function renderGrid() {
+  const grid = $('grid');
+  const day = getDay(selectedDayId);
+  if (!day) { grid.innerHTML = '<tr><td>No day yet — add one under Days.</td></tr>'; return; }
+  const total = slotsPerDay(day);
+  const startMin = toMinutes(day.start);
+  const avail = new Set();
+  if (selectedActId) {
+    for (const st of state.stages) {
+      for (const s of availableSlots(day.id, st.id, selectedActId)) avail.add(st.id + ':' + s);
+    }
+  }
+  let html = '<tr><th></th>' + state.stages.map(s => `<th>${esc(s.name)}</th>`).join('') + '<th></th></tr>';
+  const covered = new Set(); /* cells hidden under a rowspan */
+  for (let r = 0; r < total; r++) {
+    html += `<tr><td class="time">${fmtTime(startMin + r * day.slotMinutes)}</td>`;
+    for (const st of state.stages) {
+      const key = st.id + ':' + r;
+      if (covered.has(key)) continue;
+      const p = placementAt(day.id, st.id, r);
+      if (p) {
+        const act = getAct(p.actId);
+        const rows = slotsFromMinutes(act.duration, day.slotMinutes);
+        for (let k = 1; k < rows; k++) covered.add(st.id + ':' + (r + k));
+        html += `<td class="show" data-placement="${p.id}" rowspan="${rows}" style="background:${colorOf(act)}" title="${esc(act.name)} — click to remove">${esc(act.name)}</td>`;
+      } else {
+        const cls = avail.has(key) ? 'slot available' : 'slot';
+        html += `<td class="${cls}" data-stage="${st.id}" data-slot="${r}"></td>`;
+      }
+    }
+    html += `<td class="time">${fmtTime(startMin + r * day.slotMinutes)}</td></tr>`;
+  }
+  grid.innerHTML = html;
+}
+$('grid').addEventListener('click', e => {
+  const day = getDay(selectedDayId);
+  if (!day) return;
+  const showCell = e.target.closest('td.show');
+  if (showCell) {
+    const p = dayPlacements(day.id).find(x => x.id === showCell.dataset.placement);
+    if (p && removePlacement(day.id, p.id)) {
+      setStatus(`${getAct(p.actId).name} removed from ${getStage(p.stageId).name} at ${fmtTime(toMinutes(day.start) + p.slot * day.slotMinutes)}.`, 'ok');
+      renderSchedule();
+    }
+    return;
+  }
+  const cell = e.target.closest('td.slot');
+  if (!cell) return;
+  if (!selectedActId) { setStatus('Pick an act from the list first.', 'error'); return; }
+  const slot = Number(cell.dataset.slot);
+  const res = placeShow(day.id, cell.dataset.stage, slot, selectedActId);
+  if (res.ok) {
+    const act = getAct(selectedActId);
+    setStatus(`${act.name} placed on ${getStage(cell.dataset.stage).name} at ${fmtTime(toMinutes(day.start) + slot * day.slotMinutes)}. ${actRemaining(day.id, selectedActId)} of ${act.showsPerDay} left today.`, 'ok');
+    if (actRemaining(day.id, selectedActId) <= 0) selectedActId = null;
+  } else {
+    setStatus(res.reason, 'error');
+  }
+  renderSchedule();
+});
+$('clearDayBtn').addEventListener('click', e => {
+  const day = getDay(selectedDayId);
+  if (!day) return;
+  armConfirm(e.currentTarget, `Clear ${dayPlacements(day.id).length} shows?`, () => {
+    state.placements[day.id] = [];
+    saveState();
+    setStatus(day.name + ' cleared.', 'ok');
+    renderSchedule();
+  });
+});
+
+function renderSchedule() { renderDaySelect(); renderActList(); renderGrid(); }
+
+/* ---------------- days view ---------------- */
+function renderDays() {
+  $('dayRows').innerHTML = state.days.map(d => {
+    const n = (state.placements[d.id] || []).length;
+    return `<tr><td>${esc(d.name)}</td><td>${esc(d.date || '—')}</td>
+      <td>${esc(d.start)}–${esc(d.end)}</td><td>${d.slotMinutes} min</td><td>${n}</td>
+      <td><button data-edit-day="${d.id}">Edit</button>
+          <button class="danger" data-del-day="${d.id}">Delete</button></td></tr>`;
+  }).join('') || '<tr><td colspan="6">No days yet.</td></tr>';
+}
+$('dayRows').addEventListener('click', e => {
+  const editBtn = e.target.closest('[data-edit-day]');
+  const delBtn = e.target.closest('[data-del-day]');
+  if (editBtn) {
+    const d = getDay(editBtn.dataset.editDay);
+    $('dayId').value = d.id; $('dayName').value = d.name; $('dayDate').value = d.date || '';
+    $('dayStart').value = d.start; $('dayEnd').value = d.end; $('daySlot').value = String(d.slotMinutes);
+    $('dayFormTitle').textContent = 'Edit day';
+    $('dayName').focus();
+  }
+  if (delBtn) {
+    const d = getDay(delBtn.dataset.delDay);
+    const n = (state.placements[d.id] || []).length;
+    armConfirm(delBtn, 'Sure?', () => {
+      state.days = state.days.filter(x => x.id !== d.id);
+      delete state.placements[d.id];
+      if (selectedDayId === d.id) selectedDayId = state.days.length ? state.days[0].id : null;
+      saveState(); renderDays(); renderSchedule();
+    });
+  }
+});
+$('dayForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const id = $('dayId').value;
+  const name = $('dayName').value.trim();
+  const date = $('dayDate').value;
+  const start = $('dayStart').value, end = $('dayEnd').value;
+  const slotMinutes = Number($('daySlot').value);
+  if (!name) return;
+  if (toMinutes(end) <= toMinutes(start)) { $('dayMsg').textContent = 'End time must be after start time.'; return; }
+  $('dayMsg').textContent = '';
+  if (id) {
+    const d = getDay(id);
+    const layoutChanged = d.start !== start || d.end !== end || d.slotMinutes !== slotMinutes;
+    Object.assign(d, { name, date, start, end, slotMinutes });
+    if (layoutChanged) state.placements[id] = [];
+    if (layoutChanged) $('dayMsg').textContent = 'Hours or slot length changed — placed shows on this day were cleared.';
+  } else {
+    const d = { id: uid(), name, date, start, end, slotMinutes };
+    state.days.push(d);
+    state.placements[d.id] = [];
+    selectedDayId = d.id;
+  }
+  saveState();
+  $('dayForm').reset(); $('dayId').value = ''; $('daySlot').value = '30';
+  $('dayFormTitle').textContent = 'Add a day';
+  renderDays(); renderSchedule();
+});
+$('dayCancel').addEventListener('click', () => {
+  $('dayForm').reset(); $('dayId').value = ''; $('daySlot').value = '30';
+  $('dayFormTitle').textContent = 'Add a day';
+});
+
+/* ---------------- stages view ---------------- */
+function renderStages() {
+  $('stageRows').innerHTML = state.stages.map(s => {
+    let n = 0;
+    for (const d of state.days) n += (state.placements[d.id] || []).filter(p => p.stageId === s.id).length;
+    return `<tr><td>${esc(s.name)}</td><td>${n}</td>
+      <td><button data-edit-stage="${s.id}">Edit</button>
+          <button class="danger" data-del-stage="${s.id}">Delete</button></td></tr>`;
+  }).join('') || '<tr><td colspan="3">No stages yet.</td></tr>';
+}
+$('stageRows').addEventListener('click', e => {
+  const editBtn = e.target.closest('[data-edit-stage]');
+  const delBtn = e.target.closest('[data-del-stage]');
+  if (editBtn) {
+    const s = getStage(editBtn.dataset.editStage);
+    $('stageId').value = s.id; $('stageName').value = s.name;
+    $('stageFormTitle').textContent = 'Edit stage';
+    $('stageName').focus();
+  }
+  if (delBtn) {
+    const s = getStage(delBtn.dataset.delStage);
+    armConfirm(delBtn, 'Sure?', () => {
+      state.stages = state.stages.filter(x => x.id !== s.id);
+      for (const d of state.days) state.placements[d.id] = (state.placements[d.id] || []).filter(p => p.stageId !== s.id);
+      saveState(); renderStages(); renderSchedule();
+    });
+  }
+});
+$('stageForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('stageName').value.trim();
+  if (!name) return;
+  const id = $('stageId').value;
+  if (id) getStage(id).name = name;
+  else state.stages.push({ id: uid(), name });
+  saveState();
+  $('stageForm').reset(); $('stageId').value = '';
+  $('stageFormTitle').textContent = 'Add a stage';
+  renderStages(); renderSchedule();
+});
+$('stageCancel').addEventListener('click', () => {
+  $('stageForm').reset(); $('stageId').value = '';
+  $('stageFormTitle').textContent = 'Add a stage';
+});
+
+/* ---------------- categories view ---------------- */
+function renderActCategoryOptions() {
+  const sel = $('actCategory');
+  const cur = sel.value;
+  sel.innerHTML = state.categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if (state.categories.some(c => c.id === cur)) sel.value = cur;
+  const scope = $('batchScope');
+  const scopeCur = scope.value;
+  scope.innerHTML = '<option value="">All acts</option>' +
+    state.categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if (scopeCur === '' || state.categories.some(c => c.id === scopeCur)) scope.value = scopeCur;
+  const bcat = $('batchCategory');
+  const bcatCur = bcat.value;
+  bcat.innerHTML = state.categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if (state.categories.some(c => c.id === bcatCur)) bcat.value = bcatCur;
+}
+function renderCategories() {
+  $('categoryRows').innerHTML = state.categories.map(c => {
+    const n = state.acts.filter(a => a.categoryId === c.id).length;
+    return `<tr><td><span class="chip" style="background:${esc(c.color)};display:inline-block;vertical-align:middle"></span> ${esc(c.name)}</td>
+      <td>${esc(c.color)}</td><td>${n}</td>
+      <td><button data-edit-category="${c.id}">Edit</button>
+          <button class="danger" data-del-category="${c.id}">Delete</button></td></tr>`;
+  }).join('') || '<tr><td colspan="4">No categories yet.</td></tr>';
+}
+$('categoryRows').addEventListener('click', e => {
+  const editBtn = e.target.closest('[data-edit-category]');
+  const delBtn = e.target.closest('[data-del-category]');
+  if (editBtn) {
+    const c = getCategory(editBtn.dataset.editCategory);
+    $('categoryId').value = c.id; $('categoryName').value = c.name; $('categoryColor').value = c.color;
+    $('categoryFormTitle').textContent = 'Edit category';
+    $('categoryName').focus();
+  }
+  if (delBtn) {
+    const c = getCategory(delBtn.dataset.delCategory);
+    const n = state.acts.filter(a => a.categoryId === c.id).length;
+    if (n > 0) { $('categoryMsg').textContent = `${n} act${n === 1 ? '' : 's'} use the ${c.name} category — move them to another category first.`; return; }
+    $('categoryMsg').textContent = '';
+    armConfirm(delBtn, 'Sure?', () => {
+      state.categories = state.categories.filter(x => x.id !== c.id);
+      saveState(); renderCategories();
+    });
+  }
+});
+$('categoryForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('categoryName').value.trim();
+  const color = $('categoryColor').value;
+  if (!name) return;
+  const id = $('categoryId').value;
+  if (id) Object.assign(getCategory(id), { name, color });
+  else state.categories.push({ id: uid(), name, color });
+  saveState();
+  $('categoryForm').reset(); $('categoryId').value = ''; $('categoryColor').value = '#7f8c8d';
+  $('categoryFormTitle').textContent = 'Add a category';
+  renderCategories(); renderActCategoryOptions(); renderSchedule();
+});
+$('categoryCancel').addEventListener('click', () => {
+  $('categoryForm').reset(); $('categoryId').value = ''; $('categoryColor').value = '#7f8c8d';
+  $('categoryFormTitle').textContent = 'Add a category';
+});
+
+/* ---------------- acts view ---------------- */
+function renderActs() {
+  renderActCategoryOptions();
+  $('actRows').innerHTML = sortedActs().map(a => {
+    const cat = a.categoryId ? getCategory(a.categoryId) : null;
+    return `<tr><td>${esc(a.name)}</td>
+     <td><span class="chip" style="background:${colorOf(a)};display:inline-block;vertical-align:middle"></span> ${cat ? esc(cat.name) : '—'}</td>
+     <td>${a.showsPerDay}</td><td>${a.duration} min</td><td>${a.setup} min</td><td>${a.teardown} min</td><td>${a.break} min</td>
+     <td><button data-edit-act="${a.id}">Edit</button>
+         <button class="danger" data-del-act="${a.id}">Delete</button></td></tr>`;
+  }).join('') || '<tr><td colspan="8">No acts yet.</td></tr>';
+}
+$('actRows').addEventListener('click', e => {
+  const editBtn = e.target.closest('[data-edit-act]');
+  const delBtn = e.target.closest('[data-del-act]');
+  if (editBtn) {
+    const a = getAct(editBtn.dataset.editAct);
+    $('actId').value = a.id; $('actName').value = a.name; $('actCategory').value = a.categoryId || '';
+    $('actShows').value = a.showsPerDay; $('actDuration').value = a.duration;
+    $('actSetup').value = a.setup; $('actTeardown').value = a.teardown; $('actBreak').value = a.break;
+    $('actFormTitle').textContent = 'Edit act';
+    $('actName').focus();
+  }
+  if (delBtn) {
+    const a = getAct(delBtn.dataset.delAct);
+    armConfirm(delBtn, 'Sure?', () => {
+      state.acts = state.acts.filter(x => x.id !== a.id);
+      for (const d of state.days) state.placements[d.id] = (state.placements[d.id] || []).filter(p => p.actId !== a.id);
+      if (selectedActId === a.id) selectedActId = null;
+      saveState(); renderActs(); renderSchedule();
+    });
+  }
+});
+$('actForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const fields = {
+    name: $('actName').value.trim(),
+    categoryId: $('actCategory').value,
+    showsPerDay: Number($('actShows').value),
+    duration: Number($('actDuration').value),
+    setup: Number($('actSetup').value),
+    teardown: Number($('actTeardown').value),
+    break: Number($('actBreak').value),
+  };
+  if (!fields.name) return;
+  const id = $('actId').value;
+  if (id) Object.assign(getAct(id), fields);
+  else state.acts.push({ id: uid(), conflicts: 2, ...fields });
+  saveState();
+  $('actForm').reset(); $('actId').value = '';
+  $('actShows').value = 3; $('actDuration').value = 30;
+  $('actSetup').value = 5; $('actTeardown').value = 5; $('actBreak').value = 30;
+  $('actFormTitle').textContent = 'Add an act';
+  renderActs(); renderSchedule();
+});
+$('actCancel').addEventListener('click', () => {
+  $('actForm').reset(); $('actId').value = '';
+  $('actFormTitle').textContent = 'Add an act';
+});
+
+/* ---------------- batch edit acts ---------------- */
+/* No modal confirm here: the first Apply arms the change in place (the
+ * button and the line below say exactly what will happen), the second
+ * Apply does it. Changing any control disarms it. */
+let batchArmed = false;
+const BATCH_HINT = 'Applies to every act, or only the acts in one category. Clicking Apply shows what will change — click it again to confirm.';
+function disarmBatch() {
+  if (!batchArmed) return;
+  batchArmed = false;
+  $('batchApplyBtn').textContent = 'Apply to acts';
+  $('batchResult').textContent = BATCH_HINT;
+}
+$('batchField').addEventListener('change', () => {
+  disarmBatch();
+  const field = $('batchField').value;
+  const isCat = field === 'categoryId';
+  $('batchValueWrap').style.display = isCat ? 'none' : '';
+  $('batchCategoryWrap').style.display = isCat ? '' : 'none';
+  const input = $('batchValue');
+  if (field === 'showsPerDay') { input.min = 1; input.max = 20; input.step = 1; input.value = 3; }
+  else if (field === 'duration') { input.min = 5; input.step = 5; input.value = 25; input.removeAttribute('max'); }
+  else { input.min = 0; input.step = 5; input.value = 5; input.removeAttribute('max'); }
+});
+$('batchScope').addEventListener('change', disarmBatch);
+$('batchValue').addEventListener('input', disarmBatch);
+$('batchCategory').addEventListener('change', disarmBatch);
+$('batchForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const field = $('batchField').value;
+  const scope = $('batchScope').value;
+  const targets = scope ? state.acts.filter(a => a.categoryId === scope) : [...state.acts];
+  if (!targets.length) { $('batchResult').textContent = 'No acts match — nothing changed.'; return; }
+  const fieldLabel = $('batchField').selectedOptions[0].textContent;
+  const scopeText = scope ? ` in ${getCategory(scope).name}` : '';
+  let valueText, apply;
+  if (field === 'categoryId') {
+    const cat = getCategory($('batchCategory').value);
+    if (!cat) return;
+    valueText = cat.name;
+    apply = a => { a.categoryId = cat.id; };
+  } else {
+    const v = Number($('batchValue').value);
+    if (!Number.isFinite(v)) return;
+    valueText = v + (field === 'showsPerDay' ? '' : ' min');
+    apply = a => { a[field] = v; };
+  }
+  const summary = `Set ${fieldLabel} to ${valueText} for ${targets.length} act${targets.length === 1 ? '' : 's'}${scopeText}.`;
+  if (!batchArmed) {
+    batchArmed = true;
+    $('batchApplyBtn').textContent = 'Click again to confirm';
+    $('batchResult').textContent = 'This will ' + summary.charAt(0).toLowerCase() + summary.slice(1) + ' Click Apply again to confirm.';
+    return;
+  }
+  batchArmed = false;
+  $('batchApplyBtn').textContent = 'Apply to acts';
+  targets.forEach(apply);
+  saveState(); renderActs(); renderSchedule();
+  $('batchResult').textContent = summary;
+});
+
+/* ---------------- export / import / reset ---------------- */
+$('exportBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'stage-manager-data.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const s = JSON.parse(reader.result);
+      if (!Array.isArray(s.days) || !Array.isArray(s.stages) || !Array.isArray(s.acts)) throw new Error('bad file');
+      state = s;
+      migrateState(state);
+      sanitizeState(state);
+      state.placements = state.placements || {};
+      state.days.forEach(d => { if (!Array.isArray(state.placements[d.id])) state.placements[d.id] = []; });
+      selectedDayId = state.days.length ? state.days[0].id : null;
+      selectedActId = null;
+      saveState(); renderSchedule(); renderCategories(); renderActs();
+      $('importMsg').textContent = '';
+      setStatus('Data imported.', 'ok');
+    } catch (err) {
+      $('importMsg').textContent = 'That file could not be imported as stage manager data.';
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+$('resetBtn').addEventListener('click', e => {
+  armConfirm(e.currentTarget, 'Reset everything?', () => {
+    state = seedState();
+    selectedDayId = state.days[0].id;
+    selectedActId = null;
+    saveState(); renderSchedule(); renderCategories(); renderActs();
+    setStatus('Reset to the v0.11 demo lineup.', 'ok');
+  });
+});
+
+/* ---------------- init ---------------- */
+$('appVersion').textContent = 'v' + APP_VERSION;
+$('appVersionFoot').textContent = 'v' + APP_VERSION;
+renderActCategoryOptions();
+renderSchedule();
+</script>
+</body>
+</html>
