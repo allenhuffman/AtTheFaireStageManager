@@ -10,6 +10,10 @@
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.45 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
          color:var(--ink); background:var(--bg); }
+  /* header + tabs stay pinned to the top of the screen while the
+   * page scrolls; the wrapper's background keeps content from
+   * showing through the gaps between the tab buttons. */
+  .stickytop { position:sticky; top:0; z-index:20; background:var(--bg); }
   header { background:#20242b; color:#fff; padding:14px 20px; }
   header h1 { margin:0; font-size:20px; }
   header p { margin:4px 0 0; color:#c9d1d9; font-size:13px; }
@@ -30,7 +34,7 @@
    * itself scrolls, so the grid never slides away while you look for
    * an act further down the list. */
   .acts { width:280px; flex:none; border:1px solid var(--line); border-radius:8px;
-          overflow:hidden; position:sticky; top:12px; }
+          overflow:hidden; position:sticky; top:120px; }
   .acts h2, .panel h2 { margin:0; padding:10px 12px; background:#f0f0f0; font-size:14px; }
   .acts ul { list-style:none; margin:0; padding:6px; max-height:calc(100vh - 280px);
              overflow-y:auto; }
@@ -42,6 +46,10 @@
   .chip { width:14px; height:14px; border-radius:50%; flex:none; border:1px solid rgba(0,0,0,.25); }
   .acts .name { flex:1; }
   .acts .left { font-size:12px; color:var(--muted); white-space:nowrap; }
+  .acts-sort { display:flex; gap:8px; align-items:center; padding:8px 10px;
+               font-size:13px; color:var(--muted); }
+  .acts .acts-sort { border-bottom:1px solid var(--line); }
+  .acts-sort select { font-size:13px; padding:4px 6px; }
   /* grid */
   .gridwrap { overflow:auto; flex:1; border:1px solid var(--line); border-radius:8px; }
   table.grid { border-collapse:collapse; width:100%; }
@@ -80,12 +88,20 @@
   .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
   footer { padding:16px 20px; color:var(--muted); font-size:12px; }
   footer button { font-size:12px; padding:5px 10px; }
+  /* Export fallback panel: a fixed overlay, so it is visible wherever
+   * you are — in the footer flow it opened below the fold and looked
+   * like nothing had happened. */
+  #exportPanel { position:fixed; top:70px; left:50%; transform:translateX(-50%);
+                 width:min(720px,92vw); max-height:80vh; overflow:auto; background:#fff;
+                 border:1px solid var(--line); border-radius:8px; padding:14px;
+                 box-shadow:0 8px 30px rgba(0,0,0,.25); z-index:50; }
+  #exportPanel[hidden] { display:none; }
 </style>
 </head>
 <body>
+<div class="stickytop">
 <header>
   <h1>AtTheFaire Stage Manager 2026 <span id="appVersion" style="font-weight:400;font-size:14px;margin-left:8px;"></span></h1>
-  <p>Modern take on the 2010 scheduling grid. The v0.11 conflict rules, plus a cap on how many acts of a type run at once, performer groups, and per-act exclusivity. Days, stages, categories, groups and acts are configurable, and everything saves in this browser. Nothing here is pushed anywhere.</p>
 </header>
 <nav id="tabs">
   <button data-view="schedule" class="active">Schedule</button>
@@ -95,17 +111,24 @@
   <button data-view="groups">Groups</button>
   <button data-view="acts">Acts</button>
 </nav>
+</div>
 <main>
   <section id="view-schedule" class="view active">
     <div class="toolbar">
       <label><span>Day</span><select id="daySelect"></select></label>
       <span id="daySummary" class="hint"></span>
       <span style="flex:1"></span>
+      <button id="demoBtn" class="primary">Load demo data</button>
       <button id="clearDayBtn" class="danger">Clear this day</button>
     </div>
     <p id="status" class="status">Pick an act, then click an empty slot to place a show. Click a placed show to remove it.</p>
     <div class="row">
-      <div class="acts"><h2>Acts — click one to select it</h2><ul id="actList"></ul></div>
+      <div class="acts"><h2>Acts — click one to select it</h2>
+        <div class="acts-sort"><span>Sort</span><select id="actSort">
+          <option value="alpha" selected>Alphabetical</option>
+          <option value="category">By category</option>
+        </select></div>
+        <ul id="actList"></ul></div>
       <div class="gridwrap"><table class="grid" id="grid"></table></div>
     </div>
   </section>
@@ -191,6 +214,10 @@
 
   <section id="view-acts" class="view">
     <div class="panel"><h2>Acts</h2><div class="body">
+      <div class="acts-sort"><span>Sort</span><select id="actSortTab">
+        <option value="alpha" selected>Alphabetical</option>
+        <option value="category">By category</option>
+      </select></div>
       <table class="data"><thead><tr><th>Act</th><th>Category</th><th>Shows/day</th><th>Duration</th><th>Setup</th><th>Teardown</th><th>Break</th><th>Can't run against</th><th></th></tr></thead>
       <tbody id="actRows"></tbody></table>
     </div></div>
@@ -243,10 +270,19 @@
   <button id="exportBtn">Export data (JSON)</button>
   <button id="importBtn">Import data (JSON)</button>
   <input type="file" id="importFile" accept="application/json" hidden>
-  <button id="resetBtn" class="danger">Reset to v0.11 demo data</button>
+  <button id="resetBtn" class="danger">Clear all data</button>
   <span id="importMsg" style="margin-left:10px;"></span>
   <span id="appVersionFoot" style="margin-left:10px;"></span>
   <span style="margin-left:10px;">Data lives only in this browser (localStorage). No account, no server, nothing is sent anywhere.</span>
+  <div id="exportPanel" hidden>
+    <p class="hint">Download didn't start? Copy the data below — it is the same JSON the file would contain.</p>
+    <textarea id="exportText" readonly rows="12" style="width:100%;font:12px/1.4 monospace;"></textarea>
+    <div style="margin-top:8px;display:flex;gap:10px;align-items:center;">
+      <button id="exportCopyBtn" class="primary">Copy data</button>
+      <button id="exportCloseBtn">Close</button>
+      <span id="exportMsg" class="hint"></span>
+    </div>
+  </div>
 </footer>
 <script>
 'use strict';
@@ -276,8 +312,15 @@
  * empty cells.
  * 1.4.2 demo acts are 30 min with setup and teardown 0.
  * 1.4.3 the acts column sticks while the page scrolls and the act
- * list scrolls inside itself, so the grid stays in view. */
-const APP_VERSION = '1.4.3';
+ * list scrolls inside itself, so the grid stays in view.
+ * 1.4.4 the header and tabs stay pinned to the top of the screen;
+ * the "Modern take on..." intro line is removed for now.
+ * 1.5.0 the app opens empty, with a Load demo data button at the top;
+ * Export shows the data as copyable text when the download is blocked;
+ * acts can be sorted alphabetically or by category.
+ * 1.5.1 the Export panel is a fixed overlay instead of a footer block —
+ * in the footer it opened below the fold and looked like nothing happened. */
+const APP_VERSION = '1.5.1';
 const STORE_KEY = 'atf-stage-manager-experiment-v2';
 
 const COLOR_HEX = { green:'#2e8b57', purple:'#8e44ad', orange:'#e67e22',
@@ -464,6 +507,12 @@ function seedState() {
   return { eventName: 'At The Faire', days: [day], stages,
            categories: defaultCategories(), acts, groups: [], placements: { [day.id]: [] } };
 }
+/* A fresh start: no days, stages, acts or groups — just the default
+ * categories, so a first act always has somewhere to belong. */
+function emptyState() {
+  return { eventName: 'At The Faire', days: [], stages: [],
+           categories: defaultCategories(), acts: [], groups: [], placements: {} };
+}
 
 let state = loadState();
 let _fixed = migrateState(state);
@@ -483,8 +532,8 @@ function loadState() {
         return s;
       }
     }
-  } catch (e) { /* fall through to seed */ }
-  const s = seedState();
+  } catch (e) { /* fall through to empty */ }
+  const s = emptyState();
   try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) {}
   return s;
 }
@@ -521,8 +570,15 @@ function actRemaining(dayId, actId) {
   const act = getAct(actId);
   return act ? act.showsPerDay - actPlacedCount(dayId, actId) : 0;
 }
-function sortedActs() {
-  return [...state.acts].sort((a, b) => a.name.localeCompare(b.name));
+/* 'alpha': by act name. 'category': by category name, then act name. */
+function sortedActs(mode = 'alpha') {
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  if (mode === 'category') {
+    const catName = a => (getCategory(a.categoryId) || { name: '' }).name;
+    return [...state.acts].sort((a, b) =>
+      catName(a).localeCompare(catName(b)) || byName(a, b));
+  }
+  return [...state.acts].sort(byName);
 }
 function getGroup(id) { return (state.groups || []).find(g => g.id === id) || null; }
 /* Groups an act belongs to (acts sharing people, a prop or a crew). */
@@ -763,8 +819,8 @@ $('daySelect').addEventListener('change', e => {
 function renderActList() {
   const day = getDay(selectedDayId);
   const ul = $('actList');
-  if (!day) { ul.innerHTML = '<li>No day yet — add one under Days.</li>'; return; }
-  ul.innerHTML = sortedActs().map(a => {
+  if (!day) { ul.innerHTML = '<li>No day yet — load the demo data above, or add one under Days.</li>'; return; }
+  ul.innerHTML = sortedActs(actSort).map(a => {
     const left = actRemaining(day.id, a.id);
     return `<li data-act="${a.id}" class="${a.id === selectedActId ? 'selected' : ''}${left <= 0 ? ' spent' : ''}">
       <span class="chip" style="background:${colorOf(a)}"></span>
@@ -787,11 +843,26 @@ $('actList').addEventListener('click', e => {
     setStatus(`${a.name} selected — available slots are highlighted. Click one to place a ${a.duration}-minute show.`);
   }
 });
+/* Act sort: alphabetical (the original order) or by category, with acts
+ * alphabetical inside each category. One setting, two controls — the
+ * Schedule list and the Acts tab stay in step. */
+let actSort = 'alpha';
+function syncActSortSelects() {
+  $('actSort').value = actSort;
+  $('actSortTab').value = actSort;
+}
+function setActSort(mode) {
+  actSort = mode;
+  syncActSortSelects();
+  renderActList(); renderActs();
+}
+$('actSort').addEventListener('change', e => setActSort(e.target.value));
+$('actSortTab').addEventListener('change', e => setActSort(e.target.value));
 
 function renderGrid() {
   const grid = $('grid');
   const day = getDay(selectedDayId);
-  if (!day) { grid.innerHTML = '<tr><td>No day yet — add one under Days.</td></tr>'; return; }
+  if (!day) { grid.innerHTML = '<tr><td>No day yet — load the demo data above, or add one under Days.</td></tr>'; return; }
   const total = slotsPerDay(day);
   const startMin = toMinutes(day.start);
   const avail = new Set();
@@ -1132,7 +1203,7 @@ function syncExclusiveWraps() {
 $('actExclusive').addEventListener('change', syncExclusiveWraps);
 function renderActs() {
   renderActCategoryOptions();
-  $('actRows').innerHTML = sortedActs().map(a => {
+  $('actRows').innerHTML = sortedActs(actSort).map(a => {
     const cat = a.categoryId ? getCategory(a.categoryId) : null;
     return `<tr><td>${esc(a.name)}</td>
      <td><span class="chip" style="background:${colorOf(a)};display:inline-block;vertical-align:middle"></span> ${cat ? esc(cat.name) : '—'}</td>
@@ -1268,14 +1339,61 @@ $('batchForm').addEventListener('submit', e => {
 });
 
 /* ---------------- export / import / reset ---------------- */
-$('exportBtn').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'stage-manager-data.json';
-  a.click();
-  URL.revokeObjectURL(a.href);
+/* Load the v0.11 demo lineup. From an empty start it just loads; if
+ * there is already data it asks first, so a stray click can't wipe
+ * real work. */
+function applyDemo() {
+  state = seedState();
+  selectedDayId = state.days[0].id;
+  selectedActId = null;
+  saveState();
+  renderActCategoryOptions(); renderSchedule(); renderDays(); renderStages();
+  renderCategories(); renderGroups(); renderActs();
+  setStatus('Demo data loaded — the v0.11 lineup.', 'ok');
+}
+$('demoBtn').addEventListener('click', e => {
+  const hasData = state.days.length || state.stages.length || state.acts.length;
+  if (!hasData) { applyDemo(); return; }
+  armConfirm(e.currentTarget, 'Replace everything with the demo?', applyDemo);
 });
+$('exportBtn').addEventListener('click', () => {
+  const json = JSON.stringify(state, null, 2);
+  try {
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'stage-manager-data.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { /* download unavailable here — the panel below is the fallback */ }
+  /* The download above is blocked in sandboxed previews (e.g. the Muse
+   * chat preview), with no error to catch — so always show the data
+   * below as a copyable fallback. */
+  $('exportText').value = json;
+  $('exportPanel').hidden = false;
+  $('exportMsg').textContent = '';
+});
+$('exportCopyBtn').addEventListener('click', async () => {
+  const ta = $('exportText');
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(ta.value);
+      $('exportMsg').textContent = 'Copied to the clipboard.';
+      return;
+    }
+    throw new Error('no clipboard');
+  } catch (e) {
+    try {
+      ta.focus(); ta.select();
+      if (document.execCommand && document.execCommand('copy')) {
+        $('exportMsg').textContent = 'Copied to the clipboard.';
+        return;
+      }
+    } catch (e2) { /* fall through to the manual note */ }
+    $('exportMsg').textContent = 'Copy didn\'t work here — select the text above and copy it yourself (Ctrl+C / Cmd+C).';
+  }
+});
+$('exportCloseBtn').addEventListener('click', () => { $('exportPanel').hidden = true; });
 $('importBtn').addEventListener('click', () => $('importFile').click());
 $('importFile').addEventListener('change', e => {
   const file = e.target.files[0];
@@ -1303,12 +1421,14 @@ $('importFile').addEventListener('change', e => {
   e.target.value = '';
 });
 $('resetBtn').addEventListener('click', e => {
-  armConfirm(e.currentTarget, 'Reset everything?', () => {
-    state = seedState();
-    selectedDayId = state.days[0].id;
+  armConfirm(e.currentTarget, 'Clear everything?', () => {
+    state = emptyState();
+    selectedDayId = null;
     selectedActId = null;
-    saveState(); renderSchedule(); renderCategories(); renderGroups(); renderActs();
-    setStatus('Reset to the v0.11 demo lineup.', 'ok');
+    saveState();
+    renderActCategoryOptions(); renderSchedule(); renderDays(); renderStages();
+    renderCategories(); renderGroups(); renderActs();
+    setStatus('Cleared — start fresh, or load the demo data above.', 'ok');
   });
 });
 
@@ -1317,6 +1437,9 @@ $('appVersion').textContent = 'v' + APP_VERSION;
 $('appVersionFoot').textContent = 'v' + APP_VERSION;
 renderActCategoryOptions();
 renderSchedule();
+if (!state.days.length && !state.acts.length) {
+  $('status').textContent = 'No data yet — load the demo data above, or add days, stages and acts from the tabs.';
+}
 </script>
 </body>
 </html>

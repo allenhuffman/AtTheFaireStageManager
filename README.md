@@ -145,9 +145,9 @@ dbOpenStages, dbReadStages, dbAddStage, dbDeleteStage, dbUpdateStage
 
 ## The 2026 rebuild
 
-`stagemanager2026.html` is a single-file rebuild of the scheduler, written in November 2026. Open it in a browser (or serve it from any static host) — data lives in the browser's localStorage, seeded with the v0.11 lineup of 7 stages and 19 acts.
+`stagemanager2026.html` is a single-file rebuild of the scheduler, written in November 2026. Open it in a browser (or serve it from any static host) — data lives in the browser's localStorage. It opens empty: load the v0.11 demo lineup (7 stages, 19 acts) from the button at the top, or add your own days, stages and acts.
 
-It keeps the v0.11 conflict rules (setup/teardown buffers, break time, no act against itself) and adds config screens for days, stages and categories, JSON export/import, batch editing, and three more conflict rules: a per-category cap on how many acts of a type run at once (the 2010 conflicts number, moved to the category), performer groups (acts sharing a group never overlap), and per-act exclusivity with an excepted category (an exclusive joust that still allows childrens acts). The version number shows in the header and footer; see `CHANGELOG.md` for the version history.
+It keeps the v0.11 conflict rules (setup/teardown buffers, break time, no act against itself) and adds config screens for days, stages and categories, JSON export/import, batch editing, and three more conflict rules: a per-category cap on how many acts of a type run at once (the 2010 conflicts number, moved to the category), performer groups (acts sharing a group never overlap), and per-act exclusivity with an excepted category (an exclusive joust that still allows childrens acts). Export also shows the data as copyable text when the file download is blocked, and acts can be sorted alphabetically or by category. The version number shows in the header and footer; see `CHANGELOG.md` for the version history.
 
 ## Technical Notes
 

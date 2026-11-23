@@ -7,6 +7,29 @@ All versions below were built on November 23, 2026.
 Version 1.3.2 was the first version published to GitHub as
 `stagemanager2026.html`. Earlier versions lived only as local files.
 
+## 1.5.1 — 2026-11-23
+
+- The Export panel is a fixed overlay instead of a block in the footer —
+  in the footer it opened below the fold and looked like nothing had
+  happened.
+
+## 1.5.0 — 2026-11-23
+
+- The app opens empty, with a Load demo data button at the top of the
+  Schedule view. From an empty start it loads in one click; if there is
+  already data it asks first.
+- Reset is now Clear all data (it used to reset to the demo lineup).
+- Export always shows the data as copyable text in a panel, for when the
+  file download is blocked (e.g. in a sandboxed preview).
+- Acts can be sorted alphabetically (the original order) or by category,
+  with acts alphabetical inside each category. One setting, with controls
+  on the Schedule list and the Acts tab.
+
+## 1.4.4 — 2026-11-23
+
+- The header and tabs stay pinned to the top of the screen.
+- The "Modern take on..." intro line is removed for now.
+
 ## 1.4.3 — 2026-11-23
 
 - The acts column sticks while the page scrolls, and the act list scrolls
