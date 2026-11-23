@@ -19,12 +19,16 @@
 // original changelog lines are kept verbatim; bracketed notes are the
 // 2026 reconstruction, verified by diffing the surviving files with
 // their data stripped out.
+// The numbered files now live in archived/. The allen/ and
+// archives/four-kingdoms/ copies were removed from the repo after
+// this consolidation; their routine differences are recorded below,
+// and the files survive on Allen's Mac.
 //-----------------------------------------------------------------------------
 // 2010-09-09 0.00 ach Initial version.
 //                     [stagemanager001.html - MISSING, not found]
 // 2010-09-14 0.01 ach Adding "is Available" logic to disallow conflicts.
 // 2010-09-14 0.02 ach Colorized list of Acts, when shows still available.
-//                     [stagemanager002.html, v0.02 - earliest surviving
+//                     [archived/stagemanager002.html, v0.02 - earliest surviving
 //                     file. In its changelog this entry is mislabelled
 //                     0.01; later changelogs correct it to 0.02.]
 // 2010-09-15 0.03 ach Sort Acts list alphabetically. Row spanning for acts
@@ -40,32 +44,32 @@
 //                     stagemanager004.html.]
 // 2010-09-16 0.05 ach Used jsbeautifier.org on code to reformat it. New slot
 //                     available code, which works with setup/teardown time.
-//                     [stagemanager004.html, first 0.05 draft:
+//                     [archived/stagemanager004.html, first 0.05 draft:
 //                     isSlotAvailable replaces isRowAvailable; getters and
 //                     setters for duration, setup/teardown; slotsFromMinutes;
 //                     makeActID / makeSlotID; getRow / getColumn.]
-//            0.05b   Second 0.05 draft [stagemanager005.html, also calls
+//            0.05b   Second 0.05 draft [archived/stagemanager005.html, also calls
 //                     itself v0.05]: duration default 30 -> 60; row spanning
 //                     moved into clickGrid and un-commented (deletes the
 //                     spanned cells, sets rowSpan); isSlotAvailable renamed
 //                     back to isRowAvailable; cell restore in
 //                     removeFromStage uses insertCell(column) with the
 //                     correct slot id.
-//            0.06a   [repo stagemanager006.html] Conflict detector is
+//            0.06a   [archived/stagemanager006.html - was the repo-root copy] Conflict detector is
 //                     broken. Adding concept of breakTime between shows.
 //                     FIXING table row spanning stuff...! [breakTime added
 //                     (getBreakTime / setBreakTime); getActNumber replaces
 //                     getAct. Carries a "THIS VERSION IS BUGGY AND NOT
 //                     WORKING!" banner.]
-//            0.06b   [allen/stagemanager006.html] Parallel 0.06 draft:
+//            0.06b   [allen/stagemanager006.html - removed from the repo after consolidation] Parallel 0.06 draft:
 //                     "Redoing grid table and conflict detector. Sigh."
 //                     [Removes breakTime; setup/teardown default to 5;
 //                     simpler cell restore; drops the buggy banner; leaves
 //                     a live alert("isSlotAvailable()").]
-// 2010-09-17 0.07a   [repo stagemanager007.html] Rewrite conflict
+// 2010-09-17 0.07a   [archived/stagemanager007.html - was the repo-root copy] Rewrite conflict
 //                     detection stuff. [breakTime returns; JSLint type
 //                     annotations begin.]
-//            0.07b   [allen/stagemanager007.html] The rewrite that stuck:
+//            0.07b   [allen/stagemanager007.html - removed from the repo after consolidation] The rewrite that stuck:
 //                     isSlotAvailable takes the act object, checks teardown
 //                     before and after, adds a cross-grid isRowAvailable
 //                     check and the "I'm sorry, Dave" message; JSLint type
@@ -73,25 +77,25 @@
 //                     function. Later versions follow this draft, not 0.07a.
 //            0.08 ach Fixed bug that would let Act schedule beyond end of
 //                     day. Adding concept of limiting conflicting shows.
-//                     am/pm. [stagemanager008.html: end-of-day guard
+//                     am/pm. [archived/stagemanager008.html: end-of-day guard
 //                     (row+slotsUsed>slotsPerDay); per-act conflicts limit,
 //                     default 2; am/pm time display in the grid;
 //                     programStatus "Functional" replaces the buggy banner.
 //                     Dated between 2010-09-17 and 2010-09-20.]
 // 2010-09-20 0.09 ach Code cleanup via jslint.com, all warnings removed!
-//                     [stagemanager009.html: constructors renamed objAct /
+//                     [archived/stagemanager009.html: constructors renamed objAct /
 //                     objShow / objStage -> ObjAct / ObjShow / ObjStage;
 //                     sortStage added.]
 // 2010-09-21 0.10 ach Adding framework to support load/save of data, HTML5.
 //                     Fixing "for in" warning (hasOwnProperty(i) checks).
-//                     [stagemanager010.html: dbOpen / dbRead / dbAdd /
+//                     [archived/stagemanager010.html: dbOpen / dbRead / dbAdd /
 //                     dbDelete for acts, stages and days. Stubs only - no
 //                     storage is actually implemented yet.]
 //            0.11 ach Creating ObjEvent and ObjDay objects. Adding linkback
 //                     references between objects.
-//                     [stagemanager011.html - this file's code: ObjEvent,
+//                     [archived/stagemanager011.html - this file's code: ObjEvent,
 //                     ObjDay, dbUpdate* added, getParentDay / setParentDay.
-//                     stagemanager012.html and the Four Kingdoms
+//                     archived/stagemanager012.html and the Four Kingdoms index.html (removed from the repo after consolidation)
 //                     index.html add no routines - data only.]
 //-----------------------------------------------------------------------------
 /*
